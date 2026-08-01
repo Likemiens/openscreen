@@ -19,7 +19,10 @@ import {
 	unregisterAllGlobalShortcuts,
 } from "./globalShortcut";
 import { mainT, setMainLocale } from "./i18n";
-import { registerYandexDiskIpcHandlers } from "./integrations/yandexDisk";
+import {
+	registerYandexDiskIpcHandlers,
+	type YandexDiskIntegration,
+} from "./integrations/yandexDisk";
 import { getSelectedDesktopSource, registerIpcHandlers } from "./ipc/handlers";
 import { acquireStableInstanceLock } from "./singleInstanceLock";
 import {
@@ -372,6 +375,7 @@ function updateTrayMenu(recording: boolean = false) {
 let editorHasUnsavedChanges = false;
 let isForceClosing = false;
 let isCloseConfirmInFlight = false;
+let yandexDiskIntegration: YandexDiskIntegration | null = null;
 
 ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
 	editorHasUnsavedChanges = hasChanges;
@@ -406,6 +410,7 @@ function createEditorWindowWrapper() {
 		mainWindow = null;
 	}
 	mainWindow = createEditorWindow();
+	yandexDiskIntegration?.setEditorActive(true);
 	editorHasUnsavedChanges = false;
 
 	mainWindow.on("close", (event) => {
@@ -588,7 +593,11 @@ appReady?.then(async () => {
 	updateTrayMenu();
 	setupApplicationMenu();
 	await ensureRecordingsDir();
-	registerYandexDiskIpcHandlers(ipcMain, RECORDINGS_DIR, app.getPath("userData"));
+	yandexDiskIntegration = registerYandexDiskIpcHandlers(
+		ipcMain,
+		RECORDINGS_DIR,
+		app.getPath("userData"),
+	);
 
 	function switchToHudWrapper() {
 		if (mainWindow) {
@@ -597,6 +606,7 @@ appReady?.then(async () => {
 			isForceClosing = false;
 			mainWindow = null;
 		}
+		yandexDiskIntegration?.setEditorActive(false);
 		showMainWindow();
 	}
 

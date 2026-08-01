@@ -1,12 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { YandexDiskSettings } from "@/lib/yandexDisk";
+import { YANDEX_DISK_OAUTH_URL, type YandexDiskSettings } from "@/lib/yandexDisk";
 import { YandexDiskSettingsPanel } from "./YandexDiskSettingsPanel";
 
 const DISCONNECTED: YandexDiskSettings = {
 	autoUpload: false,
-	folder: "Recordings",
+	folder: "OpenScreen Exports",
+	deleteLocalAfterUpload: true,
 	connected: false,
 	encryptionAvailable: true,
 };
@@ -39,6 +40,30 @@ describe("YandexDiskSettingsPanel", () => {
 		expect(window.electronAPI.saveYandexDiskSettings).not.toHaveBeenCalled();
 	});
 
+	it("keeps safe local cleanup enabled and opens the configured OAuth app", async () => {
+		const user = userEvent.setup();
+		render(
+			<YandexDiskSettingsPanel
+				open
+				settings={DISCONNECTED}
+				isRussian={false}
+				bottomOffset={68}
+				onClose={vi.fn()}
+				onSettingsChange={vi.fn()}
+			/>,
+		);
+
+		expect(
+			(
+				screen.getByRole("checkbox", {
+					name: /Delete the local recording after upload/,
+				}) as HTMLInputElement
+			).checked,
+		).toBe(true);
+		await user.click(screen.getByRole("button", { name: "Get OAuth token" }));
+		expect(window.electronAPI.openExternalUrl).toHaveBeenCalledWith(YANDEX_DISK_OAUTH_URL);
+	});
+
 	it("sends the token once and returns only public settings", async () => {
 		const user = userEvent.setup();
 		const onClose = vi.fn();
@@ -65,11 +90,8 @@ describe("YandexDiskSettingsPanel", () => {
 			/>,
 		);
 
-		await user.clear(screen.getByLabelText("Folder inside the OpenScreen app folder"));
-		await user.type(
-			screen.getByLabelText("Folder inside the OpenScreen app folder"),
-			"Product demos",
-		);
+		await user.clear(screen.getByLabelText("Folder in your Yandex Disk root"));
+		await user.type(screen.getByLabelText("Folder in your Yandex Disk root"), "Product demos");
 		await user.type(screen.getByLabelText("OAuth token"), "secret-token");
 		await user.click(screen.getByLabelText("Upload after every recording"));
 		await user.click(screen.getByRole("button", { name: "Connect and save" }));
@@ -77,6 +99,7 @@ describe("YandexDiskSettingsPanel", () => {
 		expect(window.electronAPI.saveYandexDiskSettings).toHaveBeenCalledWith({
 			autoUpload: true,
 			folder: "Product demos",
+			deleteLocalAfterUpload: true,
 			accessToken: "secret-token",
 		});
 		expect(onSettingsChange).toHaveBeenCalledWith(connected);

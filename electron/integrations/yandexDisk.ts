@@ -6,8 +6,11 @@ import { BrowserWindow, type IpcMain, Notification, safeStorage } from "electron
 import {
 	buildYandexDiskRemotePath,
 	DEFAULT_YANDEX_DISK_FOLDER,
+	isVerifiedYandexDiskUpload,
+	matchesYandexDiskPublicFolder,
 	normalizeYandexDiskFolder,
 	type SaveYandexDiskSettingsInput,
+	YANDEX_DISK_PUBLIC_FOLDER_URL,
 	type YandexDiskSettings,
 	type YandexDiskSettingsResult,
 	type YandexDiskUploadRequestResult,
@@ -18,11 +21,19 @@ const SETTINGS_FILE_NAME = "yandex-disk.json";
 const API_BASE_URL = "https://cloud-api.yandex.net/v1/disk";
 const UPLOAD_EVENT = "yandex-disk-upload-status";
 
+interface PendingLocalDeletion {
+	filePath: string;
+	fileName: string;
+	remotePath: string;
+}
+
 interface PersistedYandexDiskSettings {
-	version: 1;
+	version: 2;
 	autoUpload: boolean;
 	folder: string;
+	deleteLocalAfterUpload: boolean;
 	encryptedAccessToken?: string;
+	pendingLocalDeletions: PendingLocalDeletion[];
 }
 
 interface YandexDiskApiErrorBody {
@@ -82,26 +93,21 @@ async function requestYandexDisk(
 	return response;
 }
 
-async function ensureRemoteFolder(folder: string, accessToken: string): Promise<void> {
-	const segments = normalizeYandexDiskFolder(folder).split("/");
-	let currentPath = "app:";
+async function verifyDestinationFolder(folder: string, accessToken: string): Promise<void> {
+	const url = new URL(`${API_BASE_URL}/resources`);
+	url.searchParams.set("path", `disk:/${normalizeYandexDiskFolder(folder)}`);
+	url.searchParams.set("fields", "type,public_url,public_key");
 
-	for (const segment of segments) {
-		currentPath = `${currentPath}/${segment}`;
-		const url = new URL(`${API_BASE_URL}/resources`);
-		url.searchParams.set("path", currentPath);
-
-		const response = await fetch(url, {
-			method: "PUT",
-			headers: {
-				Accept: "application/json",
-				Authorization: `OAuth ${accessToken}`,
-			},
-		});
-
-		// 409 means the directory already exists, which is the desired state.
-		if (response.ok || response.status === 409) continue;
-		throw new YandexDiskRequestError(await readErrorMessage(response), response.status);
+	const response = await requestYandexDisk(url, accessToken);
+	const resource = (await response.json()) as {
+		type?: string;
+		public_url?: string;
+		public_key?: string;
+	};
+	if (!matchesYandexDiskPublicFolder(resource, YANDEX_DISK_PUBLIC_FOLDER_URL)) {
+		throw new Error(
+			`The folder disk:/${normalizeYandexDiskFolder(folder)} does not match the configured public Yandex Disk folder.`,
+		);
 	}
 }
 
@@ -161,6 +167,30 @@ async function putFile(uploadUrl: string, filePath: string): Promise<void> {
 	});
 }
 
+async function verifyUploadedFile(
+	remotePath: string,
+	accessToken: string,
+	expectedSize: number,
+): Promise<void> {
+	for (let attempt = 0; attempt < 10; attempt += 1) {
+		const url = new URL(`${API_BASE_URL}/resources`);
+		url.searchParams.set("path", remotePath);
+		url.searchParams.set("fields", "type,size,path");
+
+		try {
+			const response = await requestYandexDisk(url, accessToken);
+			const resource = (await response.json()) as { type?: string; size?: number };
+			if (isVerifiedYandexDiskUpload(resource, expectedSize)) return;
+		} catch (error) {
+			if (!(error instanceof YandexDiskRequestError) || error.statusCode !== 404) throw error;
+		}
+
+		if (attempt < 9) await wait(Math.min(2_000, 500 * (attempt + 1)));
+	}
+
+	throw new Error("Yandex Disk did not confirm the uploaded file size. The local copy was kept.");
+}
+
 function shouldRetry(error: unknown): boolean {
 	return (
 		error instanceof YandexDiskRequestError &&
@@ -174,17 +204,50 @@ function wait(delayMs: number): Promise<void> {
 
 class YandexDiskService {
 	private uploadQueue: Promise<void> = Promise.resolve();
+	private editorActive = false;
+	private cleanupInProgress = false;
 
 	constructor(
 		private readonly recordingsDirectory: string,
 		private readonly settingsPath: string,
 	) {}
 
+	async initialize(): Promise<void> {
+		try {
+			const raw = JSON.parse(await fs.readFile(this.settingsPath, "utf8")) as {
+				version?: number;
+				autoUpload?: boolean;
+			};
+			if (raw.version === 1) {
+				await this.writeSettings({
+					version: 2,
+					autoUpload: Boolean(raw.autoUpload),
+					folder: DEFAULT_YANDEX_DISK_FOLDER,
+					deleteLocalAfterUpload: true,
+					pendingLocalDeletions: [],
+				});
+			}
+		} catch (error) {
+			const nodeError = error as NodeJS.ErrnoException;
+			if (nodeError.code !== "ENOENT") {
+				console.warn("Failed to migrate Yandex Disk settings:", nodeError.message);
+			}
+		}
+
+		await this.cleanupPendingLocalFiles();
+	}
+
+	setEditorActive(active: boolean): void {
+		this.editorActive = active;
+		if (!active) void this.cleanupPendingLocalFiles();
+	}
+
 	async getSettings(): Promise<YandexDiskSettings> {
 		const settings = await this.readSettings();
 		return {
 			autoUpload: settings.autoUpload,
 			folder: settings.folder,
+			deleteLocalAfterUpload: settings.deleteLocalAfterUpload,
 			connected: this.canDecryptAccessToken(settings.encryptedAccessToken),
 			encryptionAvailable: safeStorage.isEncryptionAvailable(),
 		};
@@ -194,20 +257,29 @@ class YandexDiskService {
 		const current = await this.readSettings();
 		const accessToken = input.accessToken?.trim();
 		let encryptedAccessToken = current.encryptedAccessToken;
+		let effectiveAccessToken: string | undefined;
 
 		if (accessToken) {
 			if (!safeStorage.isEncryptionAvailable()) {
 				throw new Error("Secure token storage is unavailable on this system.");
 			}
-			// Validate both the token and the narrow app-folder permission before persisting it.
-			await ensureRemoteFolder(normalizeYandexDiskFolder(input.folder), accessToken);
+			effectiveAccessToken = accessToken;
 			encryptedAccessToken = safeStorage.encryptString(accessToken).toString("base64");
+		} else if (encryptedAccessToken) {
+			effectiveAccessToken = this.decryptAccessToken(encryptedAccessToken);
+		}
+
+		// Validate both full-Disk access and the exact public destination before persisting.
+		if (effectiveAccessToken) {
+			await verifyDestinationFolder(input.folder, effectiveAccessToken);
 		}
 
 		const next: PersistedYandexDiskSettings = {
-			version: 1,
+			version: 2,
 			autoUpload: Boolean(input.autoUpload),
 			folder: normalizeYandexDiskFolder(input.folder),
+			deleteLocalAfterUpload: Boolean(input.deleteLocalAfterUpload),
+			pendingLocalDeletions: current.pendingLocalDeletions,
 			...(encryptedAccessToken ? { encryptedAccessToken } : {}),
 		};
 		await this.writeSettings(next);
@@ -217,9 +289,11 @@ class YandexDiskService {
 	async disconnect(): Promise<YandexDiskSettings> {
 		const current = await this.readSettings();
 		await this.writeSettings({
-			version: 1,
+			version: 2,
 			autoUpload: false,
 			folder: current.folder,
+			deleteLocalAfterUpload: current.deleteLocalAfterUpload,
+			pendingLocalDeletions: current.pendingLocalDeletions,
 		});
 		return this.getSettings();
 	}
@@ -257,11 +331,11 @@ class YandexDiskService {
 
 		try {
 			const accessToken = this.decryptAccessToken(settings.encryptedAccessToken);
-			await fs.access(filePath);
+			const localStats = await fs.stat(filePath);
 
 			for (let attempt = 0; attempt < 2; attempt += 1) {
 				try {
-					await ensureRemoteFolder(settings.folder, accessToken);
+					await verifyDestinationFolder(settings.folder, accessToken);
 					const uploadUrl = await getUploadUrl(remotePath, accessToken);
 					await putFile(uploadUrl, filePath);
 					break;
@@ -274,8 +348,17 @@ class YandexDiskService {
 				}
 			}
 
-			this.broadcast({ uploadId, state: "success", fileName, remotePath });
-			this.notify(`Uploaded ${fileName}`, `Saved to ${remotePath}`);
+			await verifyUploadedFile(remotePath, accessToken, localStats.size);
+			const localDeletion = await this.handleLocalDeletion({ filePath, fileName, remotePath });
+			this.broadcast({ uploadId, state: "success", fileName, remotePath, localDeletion });
+			this.notify(
+				`Uploaded ${fileName}`,
+				localDeletion === "deleted"
+					? "The local recording was deleted."
+					: localDeletion === "pending"
+						? "The local recording will be deleted after you leave the editor."
+						: `Saved to ${remotePath}`,
+			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.broadcast({ uploadId, state: "error", fileName, remotePath, error: message });
@@ -284,15 +367,107 @@ class YandexDiskService {
 		}
 	}
 
+	async cleanupPendingLocalFiles(): Promise<void> {
+		if (this.editorActive || this.cleanupInProgress) return;
+		this.cleanupInProgress = true;
+
+		try {
+			const settings = await this.readSettings();
+			if (settings.pendingLocalDeletions.length === 0) return;
+
+			const remaining: PendingLocalDeletion[] = [];
+			for (const item of settings.pendingLocalDeletions) {
+				try {
+					const [resolvedFilePath, resolvedRecordingsDirectory] = await Promise.all([
+						fs.realpath(item.filePath),
+						fs.realpath(this.recordingsDirectory),
+					]);
+					if (!isPathWithinDirectory(resolvedFilePath, resolvedRecordingsDirectory)) {
+						throw new Error("Refusing to delete a file outside the OpenScreen recordings folder.");
+					}
+					await fs.unlink(resolvedFilePath);
+					this.broadcast({
+						uploadId: `cleanup-${Date.now()}`,
+						state: "local-deleted",
+						fileName: item.fileName,
+						remotePath: item.remotePath,
+						localDeletion: "deleted",
+					});
+				} catch (error) {
+					const nodeError = error as NodeJS.ErrnoException;
+					if (nodeError.code === "ENOENT") continue;
+					remaining.push(item);
+					const message = error instanceof Error ? error.message : String(error);
+					this.broadcast({
+						uploadId: `cleanup-${Date.now()}`,
+						state: "cleanup-error",
+						fileName: item.fileName,
+						remotePath: item.remotePath,
+						error: message,
+					});
+				}
+			}
+
+			await this.writeSettings({ ...settings, pendingLocalDeletions: remaining });
+		} finally {
+			this.cleanupInProgress = false;
+		}
+	}
+
+	private async handleLocalDeletion(item: PendingLocalDeletion) {
+		const settings = await this.readSettings();
+		if (!settings.deleteLocalAfterUpload) return "kept" as const;
+
+		if (!this.editorActive) {
+			try {
+				await fs.unlink(item.filePath);
+				return "deleted" as const;
+			} catch (error) {
+				const nodeError = error as NodeJS.ErrnoException;
+				if (nodeError.code === "ENOENT") return "deleted" as const;
+			}
+		}
+
+		const alreadyPending = settings.pendingLocalDeletions.some(
+			(pending) => pending.filePath === item.filePath,
+		);
+		if (!alreadyPending) {
+			await this.writeSettings({
+				...settings,
+				pendingLocalDeletions: [...settings.pendingLocalDeletions, item],
+			});
+		}
+		return "pending" as const;
+	}
+
 	private async readSettings(): Promise<PersistedYandexDiskSettings> {
 		try {
 			const raw = JSON.parse(
 				await fs.readFile(this.settingsPath, "utf8"),
-			) as Partial<PersistedYandexDiskSettings>;
+			) as Partial<PersistedYandexDiskSettings> & { version?: number };
+			if (raw.version !== 2) {
+				return {
+					version: 2,
+					autoUpload: Boolean(raw.autoUpload),
+					folder: DEFAULT_YANDEX_DISK_FOLDER,
+					deleteLocalAfterUpload: true,
+					pendingLocalDeletions: [],
+				};
+			}
 			return {
-				version: 1,
+				version: 2,
 				autoUpload: typeof raw.autoUpload === "boolean" ? raw.autoUpload : false,
 				folder: normalizeYandexDiskFolder(raw.folder),
+				deleteLocalAfterUpload:
+					typeof raw.deleteLocalAfterUpload === "boolean" ? raw.deleteLocalAfterUpload : true,
+				pendingLocalDeletions: Array.isArray(raw.pendingLocalDeletions)
+					? raw.pendingLocalDeletions.filter(
+							(item): item is PendingLocalDeletion =>
+								typeof item?.filePath === "string" &&
+								typeof item.fileName === "string" &&
+								typeof item.remotePath === "string",
+						)
+					: [],
 				...(typeof raw.encryptedAccessToken === "string" && raw.encryptedAccessToken
 					? { encryptedAccessToken: raw.encryptedAccessToken }
 					: {}),
@@ -303,9 +478,11 @@ class YandexDiskService {
 				console.warn("Failed to read Yandex Disk settings:", nodeError.message);
 			}
 			return {
-				version: 1,
+				version: 2,
 				autoUpload: false,
 				folder: DEFAULT_YANDEX_DISK_FOLDER,
+				deleteLocalAfterUpload: true,
+				pendingLocalDeletions: [],
 			};
 		}
 	}
@@ -348,18 +525,27 @@ class YandexDiskService {
 	}
 }
 
+export interface YandexDiskIntegration {
+	setEditorActive(active: boolean): void;
+	cleanupPendingLocalFiles(): Promise<void>;
+}
+
 export function registerYandexDiskIpcHandlers(
 	ipcMain: IpcMain,
 	recordingsDirectory: string,
 	userDataDirectory: string,
-): void {
+): YandexDiskIntegration {
 	const service = new YandexDiskService(
 		recordingsDirectory,
 		path.join(userDataDirectory, SETTINGS_FILE_NAME),
 	);
+	const initialization = service.initialize().catch((error) => {
+		console.error("Failed to initialize Yandex Disk integration:", error);
+	});
 
 	ipcMain.handle("get-yandex-disk-settings", async (): Promise<YandexDiskSettingsResult> => {
 		try {
+			await initialization;
 			return { success: true, settings: await service.getSettings() };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -370,6 +556,7 @@ export function registerYandexDiskIpcHandlers(
 		"save-yandex-disk-settings",
 		async (_, input: SaveYandexDiskSettingsInput): Promise<YandexDiskSettingsResult> => {
 			try {
+				await initialization;
 				return { success: true, settings: await service.saveSettings(input) };
 			} catch (error) {
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -379,6 +566,7 @@ export function registerYandexDiskIpcHandlers(
 
 	ipcMain.handle("disconnect-yandex-disk", async (): Promise<YandexDiskSettingsResult> => {
 		try {
+			await initialization;
 			return { success: true, settings: await service.disconnect() };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -389,10 +577,13 @@ export function registerYandexDiskIpcHandlers(
 		"upload-recording-to-yandex-disk",
 		async (_, filePath: string): Promise<YandexDiskUploadRequestResult> => {
 			try {
+				await initialization;
 				return await service.enqueue(filePath);
 			} catch (error) {
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		},
 	);
+
+	return service;
 }

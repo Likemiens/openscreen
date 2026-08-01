@@ -6,7 +6,7 @@ import { NotesWindow } from "./components/launch/NotesWindow.tsx";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { useScopedT } from "./contexts/I18nContext";
+import { useI18n, useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { loadAllCustomFonts } from "./lib/customFonts";
 
@@ -18,26 +18,64 @@ const ShortcutsConfigDialog = lazy(() =>
 );
 
 function YandexDiskUploadNotifications() {
+	const { locale } = useI18n();
+	const isRussian = locale === "ru";
+
 	useEffect(() => {
 		return window.electronAPI?.onYandexDiskUploadStatus?.((status) => {
 			const toastId = `yandex-disk-${status.uploadId}`;
 			if (status.state === "uploading") {
-				toast.loading(`Uploading ${status.fileName} to Yandex Disk…`, { id: toastId });
+				toast.loading(
+					isRussian
+						? `Загружаем ${status.fileName} в Яндекс Диск…`
+						: `Uploading ${status.fileName} to Yandex Disk…`,
+					{ id: toastId },
+				);
 				return;
 			}
 			if (status.state === "success") {
-				toast.success(`Saved ${status.fileName} to Yandex Disk`, {
-					id: toastId,
-					description: status.remotePath,
-				});
+				const description =
+					status.localDeletion === "deleted"
+						? isRussian
+							? "Файл проверен на Диске, локальная копия удалена."
+							: "The file was verified on Disk and the local copy was deleted."
+						: status.localDeletion === "pending"
+							? isRussian
+								? "Файл проверен. Локальная копия удалится после выхода из редактора."
+								: "Verified. The local copy will be deleted after you leave the editor."
+							: status.remotePath;
+				toast.success(
+					isRussian
+						? `${status.fileName} успешно отправлен в Яндекс Диск`
+						: `Saved ${status.fileName} to Yandex Disk`,
+					{
+						id: toastId,
+						description,
+					},
+				);
 				return;
 			}
-			toast.error(`Yandex Disk upload failed`, {
+			if (status.state === "local-deleted") {
+				toast.success(
+					isRussian
+						? `Локальная копия ${status.fileName} удалена`
+						: `Deleted local copy of ${status.fileName}`,
+				);
+				return;
+			}
+			if (status.state === "cleanup-error") {
+				toast.error(
+					isRussian ? "Не удалось удалить локальную копию" : "Could not delete local copy",
+					{ description: status.error },
+				);
+				return;
+			}
+			toast.error(isRussian ? "Ошибка загрузки в Яндекс Диск" : "Yandex Disk upload failed", {
 				id: toastId,
 				description: status.error,
 			});
 		});
-	}, []);
+	}, [isRussian]);
 
 	return null;
 }
