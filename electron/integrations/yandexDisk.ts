@@ -2,7 +2,8 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
 import path from "node:path";
-import { BrowserWindow, type IpcMain, Notification, safeStorage } from "electron";
+import { BrowserWindow, type IpcMain, Notification, safeStorage, shell } from "electron";
+import { buildPublishedFileName, sanitizeRecordingTitle } from "../../src/lib/recordingDraft";
 import {
 	buildYandexDiskRemotePath,
 	DEFAULT_YANDEX_DISK_FOLDER,
@@ -13,6 +14,7 @@ import {
 	YANDEX_DISK_PUBLIC_FOLDER_URL,
 	type YandexDiskSettings,
 	type YandexDiskSettingsResult,
+	type YandexDiskUploadRequest,
 	type YandexDiskUploadRequestResult,
 	type YandexDiskUploadStatus,
 } from "../../src/lib/yandexDisk";
@@ -245,7 +247,6 @@ class YandexDiskService {
 	async getSettings(): Promise<YandexDiskSettings> {
 		const settings = await this.readSettings();
 		return {
-			autoUpload: settings.autoUpload,
 			folder: settings.folder,
 			deleteLocalAfterUpload: settings.deleteLocalAfterUpload,
 			connected: this.canDecryptAccessToken(settings.encryptedAccessToken),
@@ -276,7 +277,7 @@ class YandexDiskService {
 
 		const next: PersistedYandexDiskSettings = {
 			version: 2,
-			autoUpload: Boolean(input.autoUpload),
+			autoUpload: false,
 			folder: normalizeYandexDiskFolder(input.folder),
 			deleteLocalAfterUpload: Boolean(input.deleteLocalAfterUpload),
 			pendingLocalDeletions: current.pendingLocalDeletions,
@@ -298,7 +299,8 @@ class YandexDiskService {
 		return this.getSettings();
 	}
 
-	async enqueue(filePath: string): Promise<YandexDiskUploadRequestResult> {
+	async enqueue(input: YandexDiskUploadRequest): Promise<YandexDiskUploadRequestResult> {
+		const filePath = input.filePath;
 		const [resolvedFilePath, resolvedRecordingsDirectory] = await Promise.all([
 			fs.realpath(filePath),
 			fs.realpath(this.recordingsDirectory),
@@ -309,13 +311,29 @@ class YandexDiskService {
 		}
 
 		const settings = await this.readSettings();
-		if (!settings.autoUpload) return { success: true, skipped: "disabled" };
-		if (!settings.encryptedAccessToken) return { success: true, skipped: "not-connected" };
+		if (!settings.encryptedAccessToken) {
+			return { success: false, error: "Яндекс Диск не подключён." };
+		}
+
+		const sourceExtension = path.extname(resolvedFilePath) || ".mp4";
+		const requestedTitle = input.fileName
+			? path.parse(input.fileName).name
+			: path.parse(resolvedFilePath).name;
+		const fileName = buildPublishedFileName(
+			sanitizeRecordingTitle(requestedTitle),
+			sourceExtension,
+		);
+		const cleanupSourcePaths = this.resolveCleanupSourcePaths(
+			input.cleanupSourcePaths,
+			resolvedRecordingsDirectory,
+		);
 
 		const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 		this.uploadQueue = this.uploadQueue
 			.catch(() => undefined)
-			.then(() => this.uploadFile(uploadId, resolvedFilePath, settings));
+			.then(() =>
+				this.uploadFile(uploadId, resolvedFilePath, fileName, cleanupSourcePaths, settings),
+			);
 
 		return { success: true, queued: true };
 	}
@@ -323,11 +341,18 @@ class YandexDiskService {
 	private async uploadFile(
 		uploadId: string,
 		filePath: string,
+		fileName: string,
+		cleanupSourcePaths: string[],
 		settings: PersistedYandexDiskSettings,
 	): Promise<void> {
-		const fileName = path.basename(filePath);
 		const remotePath = buildYandexDiskRemotePath(settings.folder, fileName);
-		this.broadcast({ uploadId, state: "uploading", fileName, remotePath });
+		this.broadcast({
+			uploadId,
+			state: "uploading",
+			fileName,
+			remotePath,
+			publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
+		});
 
 		try {
 			const accessToken = this.decryptAccessToken(settings.encryptedAccessToken);
@@ -349,22 +374,76 @@ class YandexDiskService {
 			}
 
 			await verifyUploadedFile(remotePath, accessToken, localStats.size);
-			const localDeletion = await this.handleLocalDeletion({ filePath, fileName, remotePath });
-			this.broadcast({ uploadId, state: "success", fileName, remotePath, localDeletion });
+			const localDeletion = await this.handleLocalDeletions(
+				[filePath, ...cleanupSourcePaths],
+				remotePath,
+			);
+			this.broadcast({
+				uploadId,
+				state: "success",
+				fileName,
+				remotePath,
+				publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
+				localDeletion,
+			});
 			this.notify(
-				`Uploaded ${fileName}`,
+				`${fileName} опубликован`,
 				localDeletion === "deleted"
-					? "The local recording was deleted."
+					? "Файл проверен, локальная копия удалена. Нажмите, чтобы открыть папку."
 					: localDeletion === "pending"
-						? "The local recording will be deleted after you leave the editor."
-						: `Saved to ${remotePath}`,
+						? "Файл проверен. Локальная копия удалится после выхода из редактора."
+						: "Файл проверен на Яндекс Диске. Нажмите, чтобы открыть папку.",
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			this.broadcast({ uploadId, state: "error", fileName, remotePath, error: message });
-			this.notify(`Could not upload ${fileName}`, message);
+			this.broadcast({
+				uploadId,
+				state: "error",
+				fileName,
+				remotePath,
+				publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
+				error: message,
+			});
+			this.notify(`Не удалось опубликовать ${fileName}`, message);
 			console.error("Yandex Disk upload failed:", message);
 		}
+	}
+
+	private resolveCleanupSourcePaths(
+		input: string[] | undefined,
+		recordingsDirectory: string,
+	): string[] {
+		const candidates = new Set<string>();
+		for (const value of input ?? []) {
+			if (typeof value !== "string" || !value.trim()) continue;
+			const resolved = path.resolve(value);
+			if (!isPathWithinDirectory(resolved, recordingsDirectory)) continue;
+			candidates.add(resolved);
+
+			const parsed = path.parse(resolved);
+			if (!parsed.name.endsWith("-webcam")) {
+				candidates.add(`${resolved}.cursor.json`);
+				candidates.add(path.join(parsed.dir, `${parsed.name}.session.json`));
+			}
+		}
+		return [...candidates];
+	}
+
+	private async handleLocalDeletions(filePaths: string[], remotePath: string) {
+		const uniquePaths = [...new Set(filePaths.map((filePath) => path.resolve(filePath)))];
+		const results = [];
+		for (const filePath of uniquePaths) {
+			results.push(
+				await this.handleLocalDeletion({
+					filePath,
+					fileName: path.basename(filePath),
+					remotePath,
+				}),
+			);
+		}
+		if (results.some((result) => result === "pending")) return "pending" as const;
+		if (results.every((result) => result === "deleted")) return "deleted" as const;
+		return "kept" as const;
 	}
 
 	async cleanupPendingLocalFiles(): Promise<void> {
@@ -391,6 +470,7 @@ class YandexDiskService {
 						state: "local-deleted",
 						fileName: item.fileName,
 						remotePath: item.remotePath,
+						publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
 						localDeletion: "deleted",
 					});
 				} catch (error) {
@@ -403,6 +483,7 @@ class YandexDiskService {
 						state: "cleanup-error",
 						fileName: item.fileName,
 						remotePath: item.remotePath,
+						publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
 						error: message,
 					});
 				}
@@ -521,7 +602,11 @@ class YandexDiskService {
 
 	private notify(title: string, body: string): void {
 		if (!Notification.isSupported()) return;
-		new Notification({ title: `Yandex Disk · ${title}`, body }).show();
+		const notification = new Notification({ title: `Яндекс Диск · ${title}`, body });
+		notification.on("click", () => {
+			void shell.openExternal(YANDEX_DISK_PUBLIC_FOLDER_URL);
+		});
+		notification.show();
 	}
 }
 
@@ -575,10 +660,10 @@ export function registerYandexDiskIpcHandlers(
 
 	ipcMain.handle(
 		"upload-recording-to-yandex-disk",
-		async (_, filePath: string): Promise<YandexDiskUploadRequestResult> => {
+		async (_, request: YandexDiskUploadRequest): Promise<YandexDiskUploadRequestResult> => {
 			try {
 				await initialization;
-				return await service.enqueue(filePath);
+				return await service.enqueue(request);
 			} catch (error) {
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}

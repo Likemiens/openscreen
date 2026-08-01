@@ -5,7 +5,6 @@ import { YANDEX_DISK_OAUTH_URL, type YandexDiskSettings } from "@/lib/yandexDisk
 import { YandexDiskSettingsPanel } from "./YandexDiskSettingsPanel";
 
 const DISCONNECTED: YandexDiskSettings = {
-	autoUpload: false,
 	folder: "OpenScreen Exports",
 	deleteLocalAfterUpload: true,
 	connected: false,
@@ -70,7 +69,6 @@ describe("YandexDiskSettingsPanel", () => {
 		const onSettingsChange = vi.fn();
 		const connected: YandexDiskSettings = {
 			...DISCONNECTED,
-			autoUpload: true,
 			folder: "Product demos",
 			connected: true,
 		};
@@ -93,11 +91,9 @@ describe("YandexDiskSettingsPanel", () => {
 		await user.clear(screen.getByLabelText("Folder in your Yandex Disk root"));
 		await user.type(screen.getByLabelText("Folder in your Yandex Disk root"), "Product demos");
 		await user.type(screen.getByLabelText("OAuth token"), "secret-token");
-		await user.click(screen.getByLabelText("Upload after every recording"));
 		await user.click(screen.getByRole("button", { name: "Connect and save" }));
 
 		expect(window.electronAPI.saveYandexDiskSettings).toHaveBeenCalledWith({
-			autoUpload: true,
 			folder: "Product demos",
 			deleteLocalAfterUpload: true,
 			accessToken: "secret-token",

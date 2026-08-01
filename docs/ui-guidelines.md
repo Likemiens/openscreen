@@ -4,7 +4,7 @@
 
 OpenScreen остаётся recorder-first инструментом: HUD должен помогать начать запись, а не становиться
 панелью администрирования. Новые функции должны быть opt-in, спокойными и не менять основной путь
-`source → record → stop → editor`.
+`source → record → stop → local draft → publish/editor`.
 
 ## HUD
 
@@ -13,7 +13,10 @@ OpenScreen остаётся recorder-first инструментом: HUD дол�
 - сложные настройки открываются в компактной панели, а не разворачивают основную строку;
 - во время записи настройки, способные изменить pipeline, disabled;
 - tooltip и `aria-label` обязательны;
-- panel должна работать в horizontal и vertical layout и учитываться при resize BrowserWindow.
+- персональная сборка использует только horizontal HUD;
+- после Stop основная строка заменяется карточкой локального draft с названием и двумя CTA;
+- включённая камера всегда показывает live preview до записи;
+- cursor tooltip описывает текущее состояние, а не только следующее действие переключателя.
 
 ## Feedback
 
@@ -36,12 +39,12 @@ OpenScreen остаётся recorder-first инструментом: HUD дол�
 - не добавлять UI-библиотеку ради одной панели;
 - сохранять текущие radius, translucent surfaces и spacing rhythm;
 - не вводить magic colors, если существует семантический цвет состояния;
-- русский и английский обязательны для персональных функций; перед upstream PR — все locale-файлы.
+- персональная сборка фиксирована на русском; перед upstream PR восстанавливается полный i18n scope.
 
 ## Definition of Done
 
 - keyboard/Escape/close path работают;
 - long copy и error не ломают layout;
 - loading, empty, success, failure и disconnected states покрыты;
-- маленький экран и vertical HUD не клипуют panel;
+- маленький экран не клипует draft card, webcam preview и Yandex panel;
 - screen recorder продолжает работать при полном отказе интеграции.

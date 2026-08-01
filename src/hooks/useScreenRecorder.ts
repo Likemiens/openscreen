@@ -12,6 +12,7 @@ import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
+import { createDefaultRecordingTitle, sanitizeRecordingTitle } from "@/lib/recordingDraft";
 import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
@@ -48,19 +49,9 @@ const AUDIO_BITRATE_SYSTEM = 192_000;
 
 const WEBCAM_TARGET_FRAME_RATE = 30;
 
-function queueYandexDiskUpload(filePath?: string): void {
-	if (!filePath || !window.electronAPI?.uploadRecordingToYandexDisk) return;
-
-	void window.electronAPI
-		.uploadRecordingToYandexDisk(filePath)
-		.then((result) => {
-			if (!result.success) {
-				toast.error(result.error ?? "Failed to queue the Yandex Disk upload");
-			}
-		})
-		.catch((error) => {
-			console.error("Failed to queue the Yandex Disk upload:", error);
-		});
+export interface CompletedRecordingDraft {
+	filePath: string;
+	title: string;
 }
 
 type UseScreenRecorderReturn = {
@@ -91,6 +82,10 @@ type UseScreenRecorderReturn = {
 	setCursorCaptureMode: (mode: CursorCaptureMode) => void;
 	softwareEncoderFallbackNoticeVisible: boolean;
 	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
+	completedRecording: CompletedRecordingDraft | null;
+	setCompletedRecordingTitle: (title: string) => void;
+	openCompletedRecordingInEditor: () => Promise<void>;
+	publishCompletedRecording: () => Promise<void>;
 };
 
 type NativeWindowsRecordingHandle = {
@@ -122,6 +117,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("editable-overlay");
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
+	const [completedRecording, setCompletedRecording] = useState<CompletedRecordingDraft | null>(
+		null,
+	);
 	const screenRecorder = useRef<RecorderHandle | null>(null);
 	const webcamRecorder = useRef<RecorderHandle | null>(null);
 	const nativeWindowsRecording = useRef<NativeWindowsRecordingHandle | null>(null);
@@ -154,6 +152,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		const segmentDuration =
 			segmentStartedAt.current === null ? 0 : Date.now() - segmentStartedAt.current;
 		return accumulatedDurationMs.current + segmentDuration;
+	}, []);
+
+	const completeRecording = useCallback((filePath: string | undefined, createdAt: number) => {
+		if (!filePath) return;
+		setCompletedRecording({
+			filePath,
+			title: createDefaultRecordingTitle(createdAt),
+		});
 	}, []);
 
 	const selectMimeType = () => {
@@ -420,9 +426,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					} else if (result.path) {
 						await window.electronAPI.setCurrentVideoPath(result.path);
 					}
-					queueYandexDiskUpload(result.session?.screenVideoPath ?? result.path);
-
-					await window.electronAPI.switchToEditor();
+					completeRecording(result.session?.screenVideoPath ?? result.path, activeRecordingId);
 				} catch (error) {
 					console.error("Error saving recording:", error);
 				} finally {
@@ -445,7 +449,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			})();
 		},
-		[cursorCaptureMode, teardownMedia],
+		[completeRecording, cursorCaptureMode, teardownMedia],
 	);
 
 	const finalizeNativeWindowsRecording = useCallback(
@@ -532,9 +536,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				} else if (result.path) {
 					await window.electronAPI.setCurrentVideoPath(result.path);
 				}
-				queueYandexDiskUpload(storedSession?.screenVideoPath ?? result.path);
-
-				await window.electronAPI.switchToEditor();
+				completeRecording(
+					storedSession?.screenVideoPath ?? result.path,
+					activeNativeRecording.recordingId,
+				);
 				return true;
 			} catch (error) {
 				console.error("Error saving native Windows recording:", error);
@@ -550,7 +555,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setSaving(false);
 			}
 		},
-		[cursorCaptureMode, getRecordingDurationMs],
+		[completeRecording, cursorCaptureMode, getRecordingDurationMs],
 	);
 
 	const finalizeNativeMacRecording = useCallback(
@@ -637,9 +642,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				} else if (result.path) {
 					await window.electronAPI.setCurrentVideoPath(result.path);
 				}
-				queueYandexDiskUpload(result.session?.screenVideoPath ?? result.path);
-
-				await window.electronAPI.switchToEditor();
+				completeRecording(
+					result.session?.screenVideoPath ?? result.path,
+					activeNativeRecording.recordingId,
+				);
 				return true;
 			} catch (error) {
 				console.error("Error saving native macOS recording:", error);
@@ -655,7 +661,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setSaving(false);
 			}
 		},
-		[cursorCaptureMode, getRecordingDurationMs],
+		[completeRecording, cursorCaptureMode, getRecordingDurationMs],
 	);
 
 	const stopRecording = useRef(() => {
@@ -1740,6 +1746,24 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setSoftwareEncoderFallbackNoticeVisible(false);
 	};
 
+	const setCompletedRecordingTitle = useCallback((title: string) => {
+		setCompletedRecording((draft) => (draft ? { ...draft, title } : draft));
+	}, []);
+
+	const openCompletedRecordingInEditor = useCallback(async () => {
+		if (!completedRecording) return;
+		const title = sanitizeRecordingTitle(completedRecording.title);
+		setCompletedRecording(null);
+		await window.electronAPI.switchToEditor({ title });
+	}, [completedRecording]);
+
+	const publishCompletedRecording = useCallback(async () => {
+		if (!completedRecording) return;
+		const title = sanitizeRecordingTitle(completedRecording.title);
+		setCompletedRecording(null);
+		await window.electronAPI.switchToEditor({ backgroundPublish: true, title });
+	}, [completedRecording]);
+
 	return {
 		recording,
 		paused,
@@ -1768,5 +1792,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setCursorCaptureMode,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
+		completedRecording,
+		setCompletedRecordingTitle,
+		openCompletedRecordingInEditor,
+		publishCompletedRecording,
 	};
 }

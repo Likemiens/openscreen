@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
-import { NotesWindow } from "./components/launch/NotesWindow.tsx";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -27,7 +26,7 @@ function YandexDiskUploadNotifications() {
 			if (status.state === "uploading") {
 				toast.loading(
 					isRussian
-						? `Загружаем ${status.fileName} в Яндекс Диск…`
+						? `Публикуем ${status.fileName} в Яндекс Диск…`
 						: `Uploading ${status.fileName} to Yandex Disk…`,
 					{ id: toastId },
 				);
@@ -51,6 +50,10 @@ function YandexDiskUploadNotifications() {
 					{
 						id: toastId,
 						description,
+						action: {
+							label: isRussian ? "Открыть" : "Open",
+							onClick: () => window.electronAPI.openExternalUrl(status.publicUrl),
+						},
 					},
 				);
 				return;
@@ -84,8 +87,6 @@ export default function App() {
 	const [windowType, setWindowType] = useState(
 		() => new URLSearchParams(window.location.search).get("windowType") || "",
 	);
-	const showNotes = new URLSearchParams(window.location.search).get("showNotes") === "true";
-
 	const tEditor = useScopedT("editor");
 
 	useEffect(() => {
@@ -181,7 +182,7 @@ export default function App() {
 	return (
 		<TooltipProvider>
 			<YandexDiskUploadNotifications />
-			{showNotes ? <NotesWindow /> : content}
+			{content}
 			<Toaster theme="dark" />
 		</TooltipProvider>
 	);

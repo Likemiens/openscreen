@@ -23,8 +23,7 @@ const COPY = {
 		title: "Yandex Disk",
 		connected: "Connected",
 		disconnected: "Not connected",
-		description: "Send each recording to your OpenScreen Exports folder.",
-		autoUpload: "Upload after every recording",
+		description: "Publish finished videos manually to your shared OpenScreen folder.",
 		folder: "Folder in your Yandex Disk root",
 		openFolder: "Open shared folder",
 		deleteLocal: "Delete the local recording after upload",
@@ -43,8 +42,7 @@ const COPY = {
 		title: "Яндекс Диск",
 		connected: "Подключён",
 		disconnected: "Не подключён",
-		description: "Автоматически сохраняет основной файл после остановки записи.",
-		autoUpload: "Загружать после каждой записи",
+		description: "Публикует готовые видео вручную в вашу общую папку OpenScreen.",
 		folder: "Папка в корне Яндекс Диска",
 		openFolder: "Открыть общую папку",
 		deleteLocal: "Удалять локальную запись после загрузки",
@@ -68,13 +66,11 @@ export const YandexDiskSettingsPanel = forwardRef<HTMLDivElement, YandexDiskSett
 	) {
 		const copy = isRussian ? COPY.ru : COPY.en;
 		const [folder, setFolder] = useState(DEFAULT_YANDEX_DISK_FOLDER);
-		const [autoUpload, setAutoUpload] = useState(false);
 		const [deleteLocalAfterUpload, setDeleteLocalAfterUpload] = useState(true);
 		const [accessToken, setAccessToken] = useState("");
 		const [pending, setPending] = useState(false);
 		const [error, setError] = useState<string | null>(null);
 		const fieldId = useId();
-		const autoUploadId = `${fieldId}-auto-upload`;
 		const deleteLocalId = `${fieldId}-delete-local`;
 		const folderId = `${fieldId}-folder`;
 		const tokenId = `${fieldId}-token`;
@@ -82,7 +78,6 @@ export const YandexDiskSettingsPanel = forwardRef<HTMLDivElement, YandexDiskSett
 		useEffect(() => {
 			if (!open || !settings) return;
 			setFolder(settings.folder);
-			setAutoUpload(settings.autoUpload);
 			setDeleteLocalAfterUpload(settings.deleteLocalAfterUpload);
 			setAccessToken("");
 			setError(null);
@@ -114,7 +109,6 @@ export const YandexDiskSettingsPanel = forwardRef<HTMLDivElement, YandexDiskSett
 			setError(null);
 			try {
 				const result = await window.electronAPI.saveYandexDiskSettings({
-					autoUpload,
 					folder,
 					deleteLocalAfterUpload,
 					...(accessToken.trim() ? { accessToken: accessToken.trim() } : {}),
@@ -141,7 +135,6 @@ export const YandexDiskSettingsPanel = forwardRef<HTMLDivElement, YandexDiskSett
 					throw new Error(result.error || "Failed to disconnect Yandex Disk.");
 				}
 				onSettingsChange(result.settings);
-				setAutoUpload(false);
 				setAccessToken("");
 			} catch (disconnectError) {
 				setError(
@@ -187,21 +180,7 @@ export const YandexDiskSettingsPanel = forwardRef<HTMLDivElement, YandexDiskSett
 					</button>
 				</div>
 
-				<label
-					htmlFor={autoUploadId}
-					className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2.5"
-				>
-					<span className="text-[11px] font-medium text-white/80">{copy.autoUpload}</span>
-					<input
-						type="checkbox"
-						id={autoUploadId}
-						checked={autoUpload}
-						onChange={(event) => setAutoUpload(event.target.checked)}
-						className="h-4 w-4 accent-emerald-500"
-					/>
-				</label>
-
-				<label htmlFor={folderId} className="mt-3 block">
+				<label htmlFor={folderId} className="mt-4 block">
 					<span className="text-[10px] font-medium text-white/50">{copy.folder}</span>
 					<input
 						type="text"

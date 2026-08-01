@@ -378,7 +378,7 @@ describe("LaunchWindow record button", () => {
 	});
 });
 
-describe("LaunchWindow system language prompt", () => {
+describe("LaunchWindow personal HUD", () => {
 	beforeEach(() => {
 		platformState.value = "darwin";
 		resetLaunchMocks();
@@ -391,72 +391,13 @@ describe("LaunchWindow system language prompt", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("grows the HUD overlay tall enough to fit the prompt so its buttons stay clickable", async () => {
+	it("does not expose language or vertical-tray controls", async () => {
 		i18nState.value.systemLocaleSuggestion = "zh-CN";
 
 		renderLaunchWindow();
 
-		const prompt = await screen.findByText("Use your system language?");
-		expect(prompt).toBeInTheDocument();
-
-		// jsdom reports zero layout, so stub both the bar and the prompt to mimic a real HUD.
-		const viewportHeight = 800;
-		const barHeight = 56;
-		const bottomMargin = 20;
-		const barBottom = viewportHeight - bottomMargin;
-		const bar = prompt.parentElement?.parentElement?.querySelector(
-			"[data-tray-layout]",
-		) as HTMLElement | null;
-		if (bar) {
-			vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({
-				top: barBottom - barHeight,
-				left: 200,
-				right: 600,
-				bottom: barBottom,
-				width: 400,
-				height: barHeight,
-				x: 200,
-				y: barBottom - barHeight,
-				toJSON: () => ({}),
-			});
-			Object.defineProperty(bar, "scrollHeight", { value: barHeight, configurable: true });
-			Object.defineProperty(bar, "scrollWidth", { value: 400, configurable: true });
-		}
-
-		const promptBox = { width: 480, height: 130 };
-		const promptPanel = prompt.parentElement as HTMLElement;
-		vi.spyOn(promptPanel, "getBoundingClientRect").mockReturnValue({
-			top: 32,
-			left: 60,
-			right: 60 + promptBox.width,
-			bottom: 32 + promptBox.height,
-			width: promptBox.width,
-			height: promptBox.height,
-			x: 60,
-			y: 32,
-			toJSON: () => ({}),
-		});
-
-		// Fire any observers attached during render so the spied rect is actually consumed.
-		await act(async () => {
-			for (const callback of resizeCallbacks) {
-				callback([], {} as ResizeObserver);
-			}
-		});
-
-		await waitFor(() => {
-			expect(window.electronAPI.setHudOverlaySize).toHaveBeenCalled();
-		});
-
-		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {
-			mock: { calls: Array<[number, number]> };
-		};
-		const [, height] = sizeMock.mock.calls[sizeMock.mock.calls.length - 1];
-		// Must at least cover the prompt plus the TOP_MARGIN slack (24).
-		expect(height).toBeGreaterThanOrEqual(32 + promptBox.height + 24);
-		// And must be less than the full viewport — guards against regressions that always
-		// grow to the full viewport because of a missed bottom anchor.
-		expect(height).toBeLessThan(viewportHeight + 24);
+		expect(screen.queryByText("Use your system language?")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("launch-tray-layout-button")).not.toBeInTheDocument();
 	});
 });
 

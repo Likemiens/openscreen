@@ -16,8 +16,10 @@ import {
 	shell,
 	systemPreferences,
 } from "electron";
+import type { EditorLaunchOptions } from "../../src/lib/editorLaunch";
 import type { NativeMacRecordingRequest } from "../../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../../src/lib/nativeWindowsRecording";
+import { buildPublishedFileName } from "../../src/lib/recordingDraft";
 import {
 	type CursorCaptureMode,
 	normalizeCursorCaptureMode,
@@ -1296,13 +1298,11 @@ async function loadRecordedSessionForVideoPath(
 }
 
 export function registerIpcHandlers(
-	createEditorWindow: () => void,
+	createEditorWindow: (options?: EditorLaunchOptions) => void,
 	createSourceSelectorWindow: () => BrowserWindow,
 	createCountdownOverlayWindow: () => BrowserWindow,
-	createNotesWindowWrapper: () => BrowserWindow,
 	getMainWindow: () => BrowserWindow | null,
 	getSourceSelectorWindow: () => BrowserWindow | null,
-	getNotesWindow: () => BrowserWindow | null,
 	getCountdownOverlayWindow?: () => BrowserWindow | null,
 	onRecordingStateChange?: (recording: boolean, sourceName: string) => void,
 	_switchToHud?: () => void,
@@ -1500,22 +1500,14 @@ export function registerIpcHandlers(
 		return { opened: true };
 	});
 
-	ipcMain.handle("open-notes", async () => {
-		const notesSelectorWin = getNotesWindow();
-		if (notesSelectorWin) {
-			notesSelectorWin.focus();
-			return { opened: true };
-		}
-
-		createNotesWindowWrapper();
-		return { opened: true };
-	});
-
-	ipcMain.handle("switch-to-editor", () => {
+	ipcMain.handle("switch-to-editor", (_, input?: EditorLaunchOptions) => {
 		// createEditorWindow already closes the current mainWindow (the HUD) before
 		// opening the editor. Closing it here too double-closes, leaving ghost
 		// transparent windows and compounding the HUD shadow each cycle.
-		createEditorWindow();
+		createEditorWindow({
+			backgroundPublish: input?.backgroundPublish === true,
+			...(typeof input?.title === "string" ? { title: input.title } : {}),
+		});
 	});
 
 	ipcMain.handle("switch-to-hud", () => {
@@ -2483,6 +2475,14 @@ export function registerIpcHandlers(
 				error: String(error),
 			};
 		}
+	});
+
+	ipcMain.handle("get-managed-export-path", (_, fileName: string) => {
+		const extension = path.extname(fileName).toLowerCase() === ".gif" ? ".gif" : ".mp4";
+		const safeFileName = buildPublishedFileName(path.parse(fileName).name, extension);
+		const outputPath = path.join(RECORDINGS_DIR, safeFileName);
+		approveFilePath(outputPath);
+		return { success: true, path: outputPath };
 	});
 
 	ipcMain.handle("write-export-to-path", async (_, videoData: ArrayBuffer, filePath: string) => {

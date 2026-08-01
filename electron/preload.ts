@@ -3,7 +3,11 @@ import type { NativeMacRecordingRequest } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
 import type { RecordingSession, StoreRecordedSessionInput } from "../src/lib/recordingSession";
 import type { ShortcutBinding } from "../src/lib/shortcuts";
-import type { SaveYandexDiskSettingsInput, YandexDiskUploadStatus } from "../src/lib/yandexDisk";
+import type {
+	SaveYandexDiskSettingsInput,
+	YandexDiskUploadRequest,
+	YandexDiskUploadStatus,
+} from "../src/lib/yandexDisk";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
 
 // Asset base URL is passed from the main process via webPreferences.additionalArguments
@@ -36,9 +40,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSources: async (opts: Electron.SourcesOptions) => {
 		return await ipcRenderer.invoke("get-sources", opts);
 	},
-	switchToEditor: () => {
-		return ipcRenderer.invoke("switch-to-editor");
+	switchToEditor: (options?: import("../src/lib/editorLaunch").EditorLaunchOptions) => {
+		return ipcRenderer.invoke("switch-to-editor", options);
 	},
+	finishBackgroundPublish: (error?: string) =>
+		ipcRenderer.invoke("finish-background-publish", error),
 	switchToHud: () => {
 		return ipcRenderer.invoke("switch-to-hud");
 	},
@@ -47,9 +53,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	openSourceSelector: () => {
 		return ipcRenderer.invoke("open-source-selector");
-	},
-	openNotes: () => {
-		return ipcRenderer.invoke("open-notes");
 	},
 	selectSource: (source: ProcessedDesktopSource) => {
 		return ipcRenderer.invoke("select-source", source);
@@ -160,8 +163,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	disconnectYandexDisk: () => {
 		return ipcRenderer.invoke("disconnect-yandex-disk");
 	},
-	uploadRecordingToYandexDisk: (filePath: string) => {
-		return ipcRenderer.invoke("upload-recording-to-yandex-disk", filePath);
+	uploadRecordingToYandexDisk: (request: YandexDiskUploadRequest) => {
+		return ipcRenderer.invoke("upload-recording-to-yandex-disk", request);
 	},
 	onYandexDiskUploadStatus: (callback: (status: YandexDiskUploadStatus) => void) => {
 		const listener = (_event: unknown, status: YandexDiskUploadStatus) => callback(status);
@@ -173,6 +176,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	pickExportSavePath: (fileName: string, exportFolder?: string) => {
 		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
+	},
+	getManagedExportPath: (fileName: string) => {
+		return ipcRenderer.invoke("get-managed-export-path", fileName);
 	},
 	writeExportToPath: (videoData: ArrayBuffer, filePath: string) => {
 		return ipcRenderer.invoke("write-export-to-path", videoData, filePath);

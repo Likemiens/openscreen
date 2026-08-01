@@ -1,5 +1,5 @@
 import type { Span } from "dnd-timeline";
-import { ChevronDown, FolderOpen, Languages, Save, Video } from "lucide-react";
+import { CloudUpload, Download, FolderOpen, Save, Video } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -23,8 +23,6 @@ import {
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { INITIAL_EDITOR_STATE, useEditorHistory } from "@/hooks/useEditorHistory";
-import { type Locale } from "@/i18n/config";
-import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
 import {
 	captionSegmentsToAnnotationRegions,
 	extractMono16kFromVideoUrl,
@@ -50,6 +48,11 @@ import {
 	VideoExporter,
 } from "@/lib/exporter";
 import { computeFrameStepTime } from "@/lib/frameStep";
+import {
+	buildPublishedFileName,
+	createDefaultRecordingTitle,
+	sanitizeRecordingTitle,
+} from "@/lib/recordingDraft";
 import type { CursorCaptureMode, ProjectMedia } from "@/lib/recordingSession";
 import { isTextEditingTarget, matchesShortcut } from "@/lib/shortcuts";
 import {
@@ -192,6 +195,7 @@ function buildSaveDiagnosticMessage(formatLabel: "GIF" | "Video", reason?: strin
 }
 
 const CAPTION_WORD_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+type ExportDestination = "local" | "yandex";
 
 export default function VideoEditor() {
 	const {
@@ -257,6 +261,13 @@ export default function VideoEditor() {
 	const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 	const [exportError, setExportError] = useState<string | null>(null);
 	const [showExportDialog, setShowExportDialog] = useState(false);
+	const launchParameters = useMemo(() => new URLSearchParams(window.location.search), []);
+	const isBackgroundPublish = launchParameters.get("backgroundPublish") === "true";
+	const [recordingTitle, setRecordingTitle] = useState(() =>
+		sanitizeRecordingTitle(launchParameters.get("title") ?? createDefaultRecordingTitle()),
+	);
+	const backgroundPublishStartedRef = useRef(false);
+	const backgroundPublishFinishedRef = useRef(false);
 	const [showNewRecordingDialog, setShowNewRecordingDialog] = useState(false);
 	const [exportQuality, setExportQuality] = useState<ExportQuality>(
 		DEFAULT_EXPORT_SETTINGS.quality,
@@ -332,11 +343,10 @@ export default function VideoEditor() {
 		hasNativeCursorRecordingData(cursorRecordingData);
 	const effectiveShowCursor = showCursor && hasEditableCursorRecording;
 	const showCursorSettings = hasEditableCursorRecording;
-	const { locale, setLocale, t: rawT } = useI18n();
+	const { t: rawT } = useI18n();
 	const t = useScopedT("editor");
 	const ts = useScopedT("settings");
 	const tt = useScopedT("timeline");
-	const availableLocales = getAvailableLocales();
 
 	const nextAnnotationIdRef = useRef(1);
 	const nextAnnotationZIndexRef = useRef(1);
@@ -2184,29 +2194,39 @@ export default function VideoEditor() {
 		}
 	}, [unsavedExport, handleExportSaved]);
 
+	const finishBackgroundPublish = useCallback(
+		async (error?: string) => {
+			if (!isBackgroundPublish || backgroundPublishFinishedRef.current) return;
+			backgroundPublishFinishedRef.current = true;
+			await window.electronAPI.finishBackgroundPublish(error);
+		},
+		[isBackgroundPublish],
+	);
+
 	const handleExport = useCallback(
-		async (settings: ExportSettings) => {
+		async (settings: ExportSettings, destination: ExportDestination = "local") => {
 			if (!videoPath) {
 				toast.error("No video loaded");
+				await finishBackgroundPublish("Не удалось открыть локальную запись.");
 				return;
 			}
 
 			const video = videoPlaybackRef.current?.video;
 			if (!video) {
 				toast.error("Video not ready");
+				await finishBackgroundPublish("Видео ещё не готово к публикации.");
 				return;
 			}
 
-			// Pick the save path before exporting, otherwise the save dialog can end up
-			// hidden behind other windows after a long-running export.
 			const isGifFormat = settings.format === "gif";
-			const targetFileName = `export-${Date.now()}.${isGifFormat ? "gif" : "mp4"}`;
-			const pickResult = await window.electronAPI.pickExportSavePath(
-				targetFileName,
-				getExportFolder(),
-			);
-			if (pickResult.canceled || !pickResult.success || !pickResult.path) {
+			const targetFileName = buildPublishedFileName(recordingTitle, isGifFormat ? ".gif" : ".mp4");
+			const pickResult =
+				destination === "yandex"
+					? await window.electronAPI.getManagedExportPath(targetFileName)
+					: await window.electronAPI.pickExportSavePath(targetFileName, getExportFolder());
+			if (!pickResult.success || !pickResult.path) {
 				setShowExportDialog(false);
+				await finishBackgroundPublish(pickResult.message || "Не удалось создать итоговый файл.");
 				return;
 			}
 			const targetPath = pickResult.path;
@@ -2239,6 +2259,41 @@ export default function VideoEditor() {
 				const containerElement = playbackRef?.containerRef?.current;
 				const previewWidth = containerElement?.clientWidth || DEFAULT_SOURCE_DIMENSIONS.width;
 				const previewHeight = containerElement?.clientHeight || DEFAULT_SOURCE_DIMENSIONS.height;
+
+				const persistExport = async (arrayBuffer: ArrayBuffer, formatLabel: "GIF" | "Video") => {
+					const saveResult = await window.electronAPI.writeExportToPath(arrayBuffer, targetPath);
+					if (!saveResult.success || !saveResult.path) {
+						setUnsavedExport({
+							arrayBuffer,
+							fileName: targetFileName,
+							format: isGifFormat ? "gif" : "mp4",
+						});
+						throw new Error(saveResult.message || "Failed to save export");
+					}
+
+					setUnsavedExport(null);
+					if (destination === "local") {
+						handleExportSaved(formatLabel, saveResult.path);
+						return;
+					}
+
+					const uploadResult = await window.electronAPI.uploadRecordingToYandexDisk({
+						filePath: saveResult.path,
+						fileName: targetFileName,
+						cleanupSourcePaths: [videoSourcePath, webcamVideoSourcePath].filter(
+							(path): path is string => Boolean(path),
+						),
+					});
+					if (!uploadResult.success || !uploadResult.queued) {
+						throw new Error(uploadResult.error || "Не удалось запустить публикацию.");
+					}
+
+					toast.success("Видео подготовлено", {
+						description: "Публикация в Яндекс Диск продолжается в фоне.",
+					});
+					await window.electronAPI.clearCurrentVideoPath();
+					await finishBackgroundPublish();
+				};
 
 				if (settings.format === "gif" && settings.gifConfig) {
 					// GIF Export
@@ -2298,20 +2353,7 @@ export default function VideoEditor() {
 							}
 						}
 
-						const saveResult = await window.electronAPI.writeExportToPath(arrayBuffer, targetPath);
-
-						if (saveResult.success && saveResult.path) {
-							setUnsavedExport(null);
-							handleExportSaved("GIF", saveResult.path);
-						} else {
-							setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "gif" });
-							const message = buildSaveDiagnosticMessage(
-								"GIF",
-								saveResult.message || "Failed to save GIF",
-							);
-							setExportError(message);
-							toast.error(message);
-						}
+						await persistExport(arrayBuffer, "GIF");
 					} else {
 						const message = buildExportDiagnosticMessage({
 							formatLabel: "GIF",
@@ -2323,6 +2365,7 @@ export default function VideoEditor() {
 						});
 						setExportError(message);
 						toast.error(message);
+						await finishBackgroundPublish(result.error || "Не удалось собрать GIF.");
 					}
 				} else {
 					// MP4 Export
@@ -2393,20 +2436,7 @@ export default function VideoEditor() {
 							}
 						}
 
-						const saveResult = await window.electronAPI.writeExportToPath(arrayBuffer, targetPath);
-
-						if (saveResult.success && saveResult.path) {
-							setUnsavedExport(null);
-							handleExportSaved("Video", saveResult.path);
-						} else {
-							setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "mp4" });
-							const message = buildSaveDiagnosticMessage(
-								"Video",
-								saveResult.message || "Failed to save video",
-							);
-							setExportError(message);
-							toast.error(message);
-						}
+						await persistExport(arrayBuffer, "Video");
 					} else {
 						const message = buildExportDiagnosticMessage({
 							formatLabel: "Video",
@@ -2420,6 +2450,7 @@ export default function VideoEditor() {
 						});
 						setExportError(message);
 						toast.error(message);
+						await finishBackgroundPublish(result.error || "Не удалось собрать видео.");
 					}
 				}
 
@@ -2432,6 +2463,7 @@ export default function VideoEditor() {
 					const message = t("errors.exportBackgroundLoadFailed", { url: error.displayUrl });
 					setExportError(message);
 					toast.error(message);
+					await finishBackgroundPublish(message);
 				} else {
 					const errorMessage = error instanceof Error ? error.message : "Unknown error";
 					const message = buildExportDiagnosticMessage({
@@ -2441,6 +2473,7 @@ export default function VideoEditor() {
 					});
 					setExportError(message);
 					toast.error(t("errors.exportFailedWithError", { error: message }));
+					await finishBackgroundPublish(errorMessage);
 				}
 			} finally {
 				setIsExporting(false);
@@ -2455,6 +2488,9 @@ export default function VideoEditor() {
 			videoPath,
 			videoSourcePath,
 			webcamVideoPath,
+			webcamVideoSourcePath,
+			recordingTitle,
+			finishBackgroundPublish,
 			wallpaper,
 			zoomRegions,
 			cameraFullscreenRegions,
@@ -2491,70 +2527,102 @@ export default function VideoEditor() {
 		],
 	);
 
-	const handleOpenExportDialog = useCallback(() => {
-		if (!videoPath) {
-			toast.error("No video loaded");
-			return;
-		}
+	const handleOpenExportDialog = useCallback(
+		(destination: ExportDestination = "local") => {
+			if (!videoPath) {
+				toast.error("No video loaded");
+				return;
+			}
 
-		const video = videoPlaybackRef.current?.video;
-		if (!video) {
-			toast.error("Video not ready");
-			return;
-		}
+			const video = videoPlaybackRef.current?.video;
+			if (!video) {
+				toast.error("Video not ready");
+				return;
+			}
 
-		// Build export settings from current state
-		const sourceWidth = video.videoWidth || DEFAULT_SOURCE_DIMENSIONS.width;
-		const sourceHeight = video.videoHeight || DEFAULT_SOURCE_DIMENSIONS.height;
-		const effectiveSourceDimensions = calculateEffectiveSourceDimensions(
-			sourceWidth,
-			sourceHeight,
-			cropRegion,
-		);
-		const aspectRatioValue =
-			aspectRatio === "native"
-				? getNativeAspectRatioValue(sourceWidth, sourceHeight, cropRegion)
-				: getAspectRatioValue(aspectRatio);
-		const gifDimensions = calculateOutputDimensions(
-			effectiveSourceDimensions.width,
-			effectiveSourceDimensions.height,
+			// Build export settings from current state
+			const sourceWidth = video.videoWidth || DEFAULT_SOURCE_DIMENSIONS.width;
+			const sourceHeight = video.videoHeight || DEFAULT_SOURCE_DIMENSIONS.height;
+			const effectiveSourceDimensions = calculateEffectiveSourceDimensions(
+				sourceWidth,
+				sourceHeight,
+				cropRegion,
+			);
+			const aspectRatioValue =
+				aspectRatio === "native"
+					? getNativeAspectRatioValue(sourceWidth, sourceHeight, cropRegion)
+					: getAspectRatioValue(aspectRatio);
+			const gifDimensions = calculateOutputDimensions(
+				effectiveSourceDimensions.width,
+				effectiveSourceDimensions.height,
+				gifSizePreset,
+				GIF_SIZE_PRESETS,
+				aspectRatioValue,
+			);
+
+			const effectiveFormat = destination === "yandex" ? "mp4" : exportFormat;
+			const settings: ExportSettings = {
+				format: effectiveFormat,
+				quality: effectiveFormat === "mp4" ? exportQuality : undefined,
+				gifConfig:
+					effectiveFormat === "gif"
+						? {
+								frameRate: gifFrameRate,
+								loop: gifLoop,
+								sizePreset: gifSizePreset,
+								width: gifDimensions.width,
+								height: gifDimensions.height,
+							}
+						: undefined,
+			};
+
+			setShowExportDialog(true);
+			if (destination === "yandex") setExportFormat("mp4");
+			setExportError(null);
+			setExportedFilePath(null);
+
+			// Start export immediately
+			handleExport(settings, destination);
+		},
+		[
+			videoPath,
+			exportFormat,
+			exportQuality,
+			gifFrameRate,
+			gifLoop,
 			gifSizePreset,
-			GIF_SIZE_PRESETS,
-			aspectRatioValue,
-		);
+			aspectRatio,
+			cropRegion,
+			handleExport,
+		],
+	);
 
-		const settings: ExportSettings = {
-			format: exportFormat,
-			quality: exportFormat === "mp4" ? exportQuality : undefined,
-			gifConfig:
-				exportFormat === "gif"
-					? {
-							frameRate: gifFrameRate,
-							loop: gifLoop,
-							sizePreset: gifSizePreset,
-							width: gifDimensions.width,
-							height: gifDimensions.height,
-						}
-					: undefined,
-		};
+	const handlePublish = useCallback(async () => {
+		const settingsResult = await window.electronAPI.getYandexDiskSettings();
+		if (!settingsResult.success || !settingsResult.settings?.connected) {
+			toast.error("Сначала подключите Яндекс Диск", {
+				description: "Вернитесь к окну записи и откройте настройку по значку облака.",
+			});
+			return;
+		}
 
-		setShowExportDialog(true);
-		setExportError(null);
-		setExportedFilePath(null);
+		handleOpenExportDialog("yandex");
+	}, [handleOpenExportDialog]);
 
-		// Start export immediately
-		handleExport(settings);
-	}, [
-		videoPath,
-		exportFormat,
-		exportQuality,
-		gifFrameRate,
-		gifLoop,
-		gifSizePreset,
-		aspectRatio,
-		cropRegion,
-		handleExport,
-	]);
+	useEffect(() => {
+		if (
+			!isBackgroundPublish ||
+			backgroundPublishStartedRef.current ||
+			loading ||
+			!videoPath ||
+			duration <= 0
+		) {
+			return;
+		}
+
+		backgroundPublishStartedRef.current = true;
+		void handleOpenExportDialog("yandex");
+	}, [duration, handleOpenExportDialog, isBackgroundPublish, loading, videoPath]);
 
 	const handleCancelExport = useCallback(() => {
 		if (exporterRef.current) {
@@ -2871,23 +2939,14 @@ export default function VideoEditor() {
 						canRedo={canRedo}
 					/>
 
-					<div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all duration-150 ml-1">
-						<Languages size={15} />
-						<select
-							aria-label={ts("language.title")}
-							value={locale}
-							onChange={(e) => setLocale(e.target.value as Locale)}
-							className="bg-transparent text-[13px] font-semibold outline-none cursor-pointer appearance-none pr-1"
-							style={{ color: "inherit" }}
-						>
-							{availableLocales.map((loc) => (
-								<option key={loc} value={loc} className="bg-[#09090b] text-white">
-									{getLocaleName(loc)}
-								</option>
-							))}
-						</select>
-						<ChevronDown size={12} className="opacity-70 ml-0.5 flex-shrink-0" />
-					</div>
+					<input
+						type="text"
+						aria-label="Название видео"
+						value={recordingTitle}
+						onChange={(event) => setRecordingTitle(event.target.value)}
+						onBlur={() => setRecordingTitle((title) => sanitizeRecordingTitle(title))}
+						className="ml-1 h-8 w-56 rounded-lg border border-white/[0.08] bg-white/[0.045] px-3 text-[12px] font-medium text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-emerald-400/40 focus:bg-white/[0.07]"
+					/>
 					<button
 						type="button"
 						onClick={() => setShowNewRecordingDialog(true)}
@@ -2912,6 +2971,26 @@ export default function VideoEditor() {
 						<Save size={15} />
 						{ts("project.save")}
 					</button>
+					<div className="ml-auto flex items-center gap-2">
+						<button
+							type="button"
+							disabled={!videoPath || isExporting}
+							onClick={() => handleOpenExportDialog("local")}
+							className="flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-[12px] font-semibold text-slate-200 transition-colors hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:opacity-40"
+						>
+							<Download size={14} />
+							Save Local
+						</button>
+						<button
+							type="button"
+							disabled={!videoPath || isExporting}
+							onClick={() => void handlePublish()}
+							className="flex h-8 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-[12px] font-semibold text-emerald-950 transition-colors hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+						>
+							<CloudUpload size={14} />
+							Publish
+						</button>
+					</div>
 				</div>
 			</div>
 
@@ -3170,7 +3249,7 @@ export default function VideoEditor() {
 													)
 												: getAspectRatioValue(aspectRatio),
 										)}
-										onExport={handleOpenExportDialog}
+										onExport={() => handleOpenExportDialog("local")}
 										onExportPanelOpen={() => {
 											setSelectedZoomId(null);
 											setSelectedTrimId(null);

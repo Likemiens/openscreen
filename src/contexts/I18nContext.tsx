@@ -76,12 +76,6 @@ function getSupportedSystemLocale(): Locale | null {
 }
 
 function getInitialLocale(): Locale {
-	try {
-		const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-		if (stored && isSupportedLocale(stored)) return stored;
-	} catch {
-		// localStorage may be unavailable
-	}
 	return DEFAULT_LOCALE;
 }
 
@@ -112,6 +106,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		document.documentElement.lang = locale;
 		window.electronAPI?.setLocale?.(locale);
+		try {
+			localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+		} catch {
+			// localStorage may be unavailable
+		}
 	}, [locale]);
 
 	useEffect(() => {

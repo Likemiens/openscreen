@@ -6,11 +6,13 @@ import {
 	BrowserWindow,
 	ipcMain,
 	Menu,
+	Notification,
 	nativeImage,
 	session,
 	systemPreferences,
 	Tray,
 } from "electron";
+import type { EditorLaunchOptions } from "../src/lib/editorLaunch";
 import { ShortcutBinding } from "../src/lib/shortcuts";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "./diagnostics/main-log-buffer";
 import {
@@ -29,11 +31,16 @@ import {
 	createCountdownOverlayWindow,
 	createEditorWindow,
 	createHudOverlayWindow,
-	createNotesWindow,
 	createSourceSelectorWindow,
 } from "./windows";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+app.setName("OpenScreen");
+if (process.platform === "win32") {
+	app.setAppUserModelId("com.etiennelescot.openscreen");
+	process.title = "OpenScreen";
+}
 
 // Use Screen & System Audio Recording permissions instead of the CoreAudio Tap API on macOS.
 // Tap needs NSAudioCaptureUsageDescription in the parent app's Info.plist, which breaks when
@@ -95,7 +102,6 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 let mainWindow: BrowserWindow | null = null;
 let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
-let notesWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
 const isMac = process.platform === "darwin";
@@ -402,14 +408,14 @@ function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 	});
 }
 
-function createEditorWindowWrapper() {
+function createEditorWindowWrapper(options: EditorLaunchOptions = {}) {
 	if (mainWindow) {
 		isForceClosing = true;
 		mainWindow.close();
 		isForceClosing = false;
 		mainWindow = null;
 	}
-	mainWindow = createEditorWindow();
+	mainWindow = createEditorWindow(options);
 	yandexDiskIntegration?.setEditorActive(true);
 	editorHasUnsavedChanges = false;
 
@@ -455,19 +461,6 @@ function createSourceSelectorWindowWrapper() {
 		}
 	});
 	return sourceSelectorWindow;
-}
-
-function createNotesWindowWrapper() {
-	{
-		notesWindow = createNotesWindow();
-		notesWindow.on("closed", () => {
-			notesWindow = null;
-			if (mainWindow && !mainWindow.isDestroyed()) {
-				mainWindow.webContents.send("notes-window-closed");
-			}
-		});
-		return notesWindow;
-	}
 }
 
 function createCountdownOverlayWindowWrapper() {
@@ -583,6 +576,22 @@ appReady?.then(async () => {
 		setupApplicationMenu();
 		updateTrayMenu();
 	});
+	ipcMain.handle("finish-background-publish", (_, error?: string) => {
+		const backgroundEditor = mainWindow;
+		mainWindow = createHudOverlayWindow({ startHidden: true });
+		yandexDiskIntegration?.setEditorActive(false);
+		editorHasUnsavedChanges = false;
+		if (error && Notification.isSupported()) {
+			new Notification({
+				title: "OpenScreen · публикация не удалась",
+				body: error,
+			}).show();
+		}
+		if (backgroundEditor && !backgroundEditor.isDestroyed()) {
+			forceCloseEditorWindow(backgroundEditor);
+		}
+		return { success: true };
+	});
 
 	ipcMain.handle("update-global-shortcut", (_, binding: ShortcutBinding) => {
 		const success = registerOpenAppShortcut(binding, showMainWindow);
@@ -614,10 +623,8 @@ appReady?.then(async () => {
 		createEditorWindowWrapper,
 		createSourceSelectorWindowWrapper,
 		createCountdownOverlayWindowWrapper,
-		createNotesWindowWrapper,
 		() => mainWindow,
 		() => sourceSelectorWindow,
-		() => notesWindow,
 		() => countdownOverlayWindow,
 		(recording: boolean, sourceName: string) => {
 			selectedSourceName = sourceName;

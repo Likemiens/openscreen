@@ -28,7 +28,10 @@ interface Window {
 			request: import("../src/native/contracts").NativeBridgeRequest,
 		) => Promise<import("../src/native/contracts").NativeBridgeResponse<TData>>;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
-		switchToEditor: () => Promise<void>;
+		switchToEditor: (
+			options?: import("../src/lib/editorLaunch").EditorLaunchOptions,
+		) => Promise<void>;
+		finishBackgroundPublish: (error?: string) => Promise<{ success: boolean }>;
 		switchToHud: () => Promise<void>;
 		startNewRecording: () => Promise<{ success: boolean; error?: string }>;
 		openSourceSelector: () => Promise<{
@@ -40,10 +43,6 @@ interface Window {
 				status: string;
 				error?: string;
 			};
-		}>;
-		openNotes: () => Promise<{
-			opened: boolean;
-			reason?: string;
 		}>;
 		selectSource: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
 		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
@@ -183,7 +182,7 @@ interface Window {
 		) => Promise<import("../src/lib/yandexDisk").YandexDiskSettingsResult>;
 		disconnectYandexDisk: () => Promise<import("../src/lib/yandexDisk").YandexDiskSettingsResult>;
 		uploadRecordingToYandexDisk: (
-			filePath: string,
+			request: import("../src/lib/yandexDisk").YandexDiskUploadRequest,
 		) => Promise<import("../src/lib/yandexDisk").YandexDiskUploadRequestResult>;
 		onYandexDiskUploadStatus: (
 			callback: (status: import("../src/lib/yandexDisk").YandexDiskUploadStatus) => void,
@@ -198,6 +197,11 @@ interface Window {
 			message?: string;
 			canceled?: boolean;
 			error?: string;
+		}>;
+		getManagedExportPath: (fileName: string) => Promise<{
+			success: boolean;
+			path?: string;
+			message?: string;
 		}>;
 		writeExportToPath: (
 			videoData: ArrayBuffer,

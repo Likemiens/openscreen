@@ -1,16 +1,5 @@
-import {
-	Check,
-	ChevronDown,
-	Clapperboard,
-	CloudUpload,
-	Columns3,
-	Languages,
-	Loader2,
-	NotepadText,
-	Rows3,
-} from "lucide-react";
+import { ChevronDown, Clapperboard, CloudUpload, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { BsPauseCircle, BsPlayCircle, BsRecordCircle } from "react-icons/bs";
 import { FaRegStopCircle } from "react-icons/fa";
 import { FaFolderOpen } from "react-icons/fa6";
@@ -30,8 +19,6 @@ import {
 } from "react-icons/md";
 import { RxDragHandleDots2 } from "react-icons/rx";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
-import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
-import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import type { YandexDiskSettings } from "@/lib/yandexDisk";
 import { nativeBridgeClient } from "@/native";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
@@ -45,6 +32,8 @@ import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
+import { RecordingCompletePanel } from "./RecordingCompletePanel";
+import { WebcamPreview } from "./WebcamPreview";
 import { YandexDiskSettingsPanel } from "./YandexDiskSettingsPanel";
 
 const ICON_SIZE = 20;
@@ -103,17 +92,7 @@ const hudSidebarVerticalClasses =
 /** Launches the floating recording HUD and its recorder controls. */
 export function LaunchWindow() {
 	const t = useScopedT("launch");
-	const availableLocales = getAvailableLocales();
-	const {
-		locale,
-		setLocale,
-		systemLocaleSuggestion,
-		acceptSystemLocaleSuggestion,
-		dismissSystemLocaleSuggestion,
-		resolveSystemLocaleSuggestion,
-	} = useI18n();
-	const suggestedLanguageName = systemLocaleSuggestion ? getLocaleName(systemLocaleSuggestion) : "";
-	const activeLanguageLabel = getLocaleName(locale).split(/\s+/)[0] || locale.toUpperCase();
+	const { locale } = useI18n();
 
 	const {
 		recording,
@@ -141,6 +120,10 @@ export function LaunchWindow() {
 		setCursorCaptureMode,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
+		completedRecording,
+		setCompletedRecordingTitle,
+		openCompletedRecordingInEditor,
+		publishCompletedRecording,
 	} = useScreenRecorder();
 
 	const showMicControls = microphoneEnabled && !recording;
@@ -150,35 +133,17 @@ export function LaunchWindow() {
 	const [isMicFocused, setIsMicFocused] = useState(false);
 	const micExpanded = isMicHovered || isMicFocused;
 
-	const [isWebcamHovered, setIsWebcamHovered] = useState(false);
-	const [isWebcamFocused, setIsWebcamFocused] = useState(false);
-	const webcamExpanded = isWebcamHovered || isWebcamFocused;
-	const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
 	const [isYandexDiskOpen, setIsYandexDiskOpen] = useState(false);
 	const [yandexDiskSettings, setYandexDiskSettings] = useState<YandexDiskSettings | null>(null);
-	const [trayLayout, setTrayLayout] = useState<"horizontal" | "vertical">(
-		() => loadUserPreferences().trayLayout,
-	);
+	const [trayLayout] = useState<"horizontal" | "vertical">("horizontal");
 	const [supportsCursorModeToggle, setSupportsCursorModeToggle] = useState(false);
 	const [isLinuxHud, setIsLinuxHud] = useState(false);
-	const languageTriggerRef = useRef<HTMLButtonElement | null>(null);
-	const languageMenuPanelRef = useRef<HTMLDivElement | null>(null);
 	const hudBarRef = useRef<HTMLDivElement | null>(null);
 	const deviceSelectorRef = useRef<HTMLDivElement | null>(null);
-	const systemLocalePromptRef = useRef<HTMLDivElement | null>(null);
 	const softwareFallbackNoticeRef = useRef<HTMLDivElement | null>(null);
 	const yandexDiskPanelRef = useRef<HTMLDivElement | null>(null);
 	// Measured bar height, anchors the popups above the tall vertical tray so they don't overlap it.
 	const [hudBarHeight, setHudBarHeight] = useState(0);
-	const [languageMenuStyle, setLanguageMenuStyle] = useState<{
-		right: number;
-		top: number;
-		maxHeight: number;
-	}>({
-		right: 12,
-		top: 12,
-		maxHeight: 240,
-	});
 
 	const {
 		devices: micDevices,
@@ -274,71 +239,6 @@ export function LaunchWindow() {
 		});
 	}, []);
 
-	useEffect(() => {
-		if (!isLanguageMenuOpen) return;
-
-		const handlePointerDown = (event: PointerEvent) => {
-			const target = event.target as Node;
-			const clickedTrigger = languageTriggerRef.current?.contains(target);
-			const clickedMenu = languageMenuPanelRef.current?.contains(target);
-			if (!clickedTrigger && !clickedMenu) {
-				setIsLanguageMenuOpen(false);
-			}
-		};
-
-		const handleEscape = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				setIsLanguageMenuOpen(false);
-			}
-		};
-
-		window.addEventListener("pointerdown", handlePointerDown);
-		window.addEventListener("keydown", handleEscape);
-
-		return () => {
-			window.removeEventListener("pointerdown", handlePointerDown);
-			window.removeEventListener("keydown", handleEscape);
-		};
-	}, [isLanguageMenuOpen]);
-
-	useEffect(() => {
-		if (!isLanguageMenuOpen || !languageTriggerRef.current) return;
-
-		const updatePosition = () => {
-			if (!languageTriggerRef.current) return;
-			const rect = languageTriggerRef.current.getBoundingClientRect();
-			const gap = 8;
-			const viewportPadding = 8;
-			const availableHeight = Math.max(80, rect.top - viewportPadding - gap);
-			const top = Math.max(viewportPadding, rect.top - gap - availableHeight);
-
-			setLanguageMenuStyle({
-				right: Math.max(viewportPadding, window.innerWidth - rect.right),
-				top,
-				maxHeight: availableHeight,
-			});
-		};
-
-		updatePosition();
-		window.addEventListener("resize", updatePosition);
-		window.addEventListener("scroll", updatePosition, true);
-
-		return () => {
-			window.removeEventListener("resize", updatePosition);
-			window.removeEventListener("scroll", updatePosition, true);
-		};
-	}, [isLanguageMenuOpen]);
-
-	useEffect(() => {
-		if (!isLanguageMenuOpen || !languageMenuPanelRef.current) return;
-		const id = requestAnimationFrame(() => {
-			if (languageMenuPanelRef.current) {
-				languageMenuPanelRef.current.scrollTop = 0;
-			}
-		});
-		return () => cancelAnimationFrame(id);
-	}, [isLanguageMenuOpen]);
-
 	// Resize the overlay window to fit content, else the taller vertical tray gets clipped
 	// and scrolls. Measure from the window's bottom-centre (the anchor the main process
 	// preserves) so fixed bottom/centre offsets keep this stable and it doesn't oscillate.
@@ -387,23 +287,6 @@ export function LaunchWindow() {
 			}
 		}
 
-		// The language menu scrolls within available height, so it only influences width.
-		// Its presence in the DOM means it's open.
-		if (languageMenuPanelRef.current) {
-			const rect = languageMenuPanelRef.current.getBoundingClientRect();
-			halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
-		}
-
-		// Prompt sits at `fixed top-8`; grow the window to fit it so its buttons don't clip (issue #30).
-		if (systemLocalePromptRef.current) {
-			const rect = systemLocalePromptRef.current.getBoundingClientRect();
-			const promptHeight = rect.height || systemLocalePromptRef.current.scrollHeight;
-			if (promptHeight > 0) {
-				topFromBottom = Math.max(topFromBottom, rect.top + promptHeight);
-			}
-			halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
-		}
-
 		// The software-encoder fallback notice shares the prompt's fixed top-8 slot and needs
 		// the same treatment so its buttons stay clickable.
 		if (softwareFallbackNoticeRef.current) {
@@ -417,11 +300,7 @@ export function LaunchWindow() {
 
 		if (yandexDiskPanelRef.current) {
 			const rect = yandexDiskPanelRef.current.getBoundingClientRect();
-			const popupBottomOffset =
-				trayLayout === "vertical"
-					? barEl.scrollHeight + HUD_DEVICE_POPUP_GAP
-					: HUD_DEVICE_POPUP_HORIZONTAL_BOTTOM;
-			topFromBottom = Math.max(topFromBottom, popupBottomOffset + rect.height);
+			topFromBottom = Math.max(topFromBottom, viewportHeight - rect.top);
 			halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
 		}
 
@@ -447,10 +326,8 @@ export function LaunchWindow() {
 		hudResizeObserverRef.current = observer;
 		if (hudBarRef.current) observer.observe(hudBarRef.current);
 		if (deviceSelectorRef.current) observer.observe(deviceSelectorRef.current);
-		// Backfill refs set before the observer existed (e.g. the prompt or language menu).
-		if (systemLocalePromptRef.current) observer.observe(systemLocalePromptRef.current);
+		// Backfill refs set before the observer existed.
 		if (softwareFallbackNoticeRef.current) observer.observe(softwareFallbackNoticeRef.current);
-		if (languageMenuPanelRef.current) observer.observe(languageMenuPanelRef.current);
 		if (yandexDiskPanelRef.current) observer.observe(yandexDiskPanelRef.current);
 		measureHudSize();
 		return () => {
@@ -475,14 +352,6 @@ export function LaunchWindow() {
 	);
 	const setDeviceSelectorEl = useCallback(
 		(el: HTMLDivElement | null) => observeHudElement(el, deviceSelectorRef),
-		[observeHudElement],
-	);
-	const setLanguageMenuPanelEl = useCallback(
-		(el: HTMLDivElement | null) => observeHudElement(el, languageMenuPanelRef),
-		[observeHudElement],
-	);
-	const setSystemLocalePromptEl = useCallback(
-		(el: HTMLDivElement | null) => observeHudElement(el, systemLocalePromptRef),
 		[observeHudElement],
 	);
 	const setSoftwareFallbackNoticeEl = useCallback(
@@ -515,8 +384,8 @@ export function LaunchWindow() {
 	}, [setHudMouseEventsEnabled]);
 
 	useEffect(() => {
-		setHudMouseEventsEnabled(isLanguageMenuOpen || isYandexDiskOpen);
-	}, [isLanguageMenuOpen, isYandexDiskOpen, setHudMouseEventsEnabled]);
+		setHudMouseEventsEnabled(isYandexDiskOpen);
+	}, [isYandexDiskOpen, setHudMouseEventsEnabled]);
 
 	const defaultSourceName = t("sourceSelector.defaultSourceName");
 	const [selectedSource, setSelectedSource] = useState(defaultSourceName);
@@ -620,13 +489,6 @@ export function LaunchWindow() {
 			window.electronAPI.hudOverlayClose();
 		}
 	};
-	/** Switches the HUD between horizontal and vertical tray layouts. */
-	const toggleTrayLayout = () => {
-		const nextLayout = trayLayout === "horizontal" ? "vertical" : "horizontal";
-		setTrayLayout(nextLayout);
-		saveUserPreferences({ trayLayout: nextLayout });
-	};
-
 	const toggleMicrophone = () => {
 		if (!recording && !saving) {
 			setMicrophoneEnabled(!microphoneEnabled);
@@ -699,6 +561,43 @@ export function LaunchWindow() {
 		measureHudSize();
 	};
 
+	if (completedRecording) {
+		return (
+			<div
+				className={`h-full w-full min-w-0 max-w-full overflow-hidden bg-transparent ${styles.electronDrag}`}
+				onPointerMove={() => setHudMouseEventsEnabled(true)}
+				onPointerLeave={() => {
+					if (!isYandexDiskOpen) setHudMouseEventsEnabled(false);
+				}}
+			>
+				<YandexDiskSettingsPanel
+					ref={setYandexDiskPanelEl}
+					open={isYandexDiskOpen}
+					settings={yandexDiskSettings}
+					isRussian
+					bottomOffset={196}
+					onClose={() => setIsYandexDiskOpen(false)}
+					onSettingsChange={setYandexDiskSettings}
+				/>
+				<div
+					ref={setHudBarEl}
+					data-hud-interactive="true"
+					className={`fixed bottom-5 left-1/2 -translate-x-1/2 rounded-2xl border border-white/[0.10] bg-[#07080a]/95 shadow-[0_20px_60px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl ${styles.electronNoDrag}`}
+					onPointerEnter={() => setHudMouseEventsEnabled(true)}
+				>
+					<RecordingCompletePanel
+						draft={completedRecording}
+						yandexConnected={Boolean(yandexDiskSettings?.connected)}
+						onTitleChange={setCompletedRecordingTitle}
+						onPublish={() => void publishCompletedRecording()}
+						onOpenEditor={() => void openCompletedRecordingInEditor()}
+						onConfigureYandex={() => setIsYandexDiskOpen(true)}
+					/>
+				</div>
+			</div>
+		);
+	}
+
 	return (
 		// Avoid w-screen/h-screen: 100vw can exceed the inner layout width when scrollbars
 		// affect the viewport (Windows), causing a horizontal scrollbar (issue #305).
@@ -707,58 +606,18 @@ export function LaunchWindow() {
 			onPointerMove={(event) => {
 				const target = event.target as HTMLElement | null;
 				const shouldCapture =
-					isLanguageMenuOpen ||
-					isYandexDiskOpen ||
-					Boolean(target?.closest("[data-hud-interactive='true']"));
+					isYandexDiskOpen || Boolean(target?.closest("[data-hud-interactive='true']"));
 				setHudMouseEventsEnabled(shouldCapture);
 			}}
 			onPointerLeave={() => {
-				if (!isLanguageMenuOpen && !isYandexDiskOpen) {
+				if (!isYandexDiskOpen) {
 					setHudMouseEventsEnabled(false);
 				}
 			}}
 		>
 			{/* Top-center notices share one fixed column so they stack instead of overlapping */}
-			{(systemLocaleSuggestion || softwareEncoderFallbackNoticeVisible) && (
+			{softwareEncoderFallbackNoticeVisible && (
 				<div className="fixed top-8 left-1/2 z-30 flex w-[calc(100vw-1rem)] max-w-[520px] -translate-x-1/2 flex-col gap-2">
-					{systemLocaleSuggestion && (
-						<div
-							ref={setSystemLocalePromptEl}
-							data-hud-interactive="true"
-							className={`w-full rounded-xl border border-white/15 bg-[rgba(20,20,28,0.95)] p-3 shadow-2xl backdrop-blur-xl text-white animate-in fade-in-0 zoom-in-95 duration-200 ${styles.electronNoDrag}`}
-						>
-							<div className="text-[13px] font-semibold text-white">
-								{t("systemLanguagePrompt.title")}
-							</div>
-							<div className="mt-1 text-[11px] leading-relaxed text-white/75">
-								{t("systemLanguagePrompt.description", {
-									language: suggestedLanguageName,
-								})}
-							</div>
-							<div className="mt-3 flex items-center justify-end gap-2">
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									onClick={dismissSystemLocaleSuggestion}
-									className="h-7 text-xs text-white/80 hover:bg-white/10 hover:text-white"
-								>
-									{t("systemLanguagePrompt.keepDefault")}
-								</Button>
-								<Button
-									type="button"
-									size="sm"
-									onClick={acceptSystemLocaleSuggestion}
-									className="h-7 text-xs bg-white text-[#10121b] hover:bg-white/90"
-								>
-									{t("systemLanguagePrompt.switch", {
-										language: suggestedLanguageName,
-									})}
-								</Button>
-							</div>
-						</div>
-					)}
-
 					{softwareEncoderFallbackNoticeVisible && (
 						<div
 							ref={setSoftwareFallbackNoticeEl}
@@ -860,83 +719,42 @@ export function LaunchWindow() {
 
 					{/* Webcam selector */}
 					{showWebcamControls && (
-						<div
-							className={`flex h-9 items-center gap-2 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0c10]/90 px-3 py-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.4)] backdrop-blur-2xl transition-all duration-300 ${!webcamExpanded ? "opacity-60 grayscale-[0.5]" : "opacity-100"}`}
-							onMouseEnter={() => setIsWebcamHovered(true)}
-							onMouseLeave={() => setIsWebcamHovered(false)}
-							onFocus={() => setIsWebcamFocused(true)}
-							onBlur={() => setIsWebcamFocused(false)}
-							style={{
-								width: webcamExpanded ? "240px" : "140px",
-								transition: "width 300ms ease",
-							}}
-						>
-							<div className="relative flex-1 min-w-0">
-								{!webcamExpanded && (
-									<div className="text-white/60 text-[10px] font-medium truncate">
+						<div className="w-[240px] rounded-2xl border border-white/[0.08] bg-[#0b0c10]/95 p-2 shadow-[0_18px_42px_rgba(0,0,0,0.4)] backdrop-blur-2xl">
+							<WebcamPreview deviceId={webcamDeviceId || selectedCameraId} />
+							<div className="relative mt-2">
+								{isCameraDevicesLoading || cameraDevicesError || cameraDevices.length === 0 ? (
+									<div className="h-7 truncate rounded-lg bg-white/5 px-2 py-1.5 text-[10px] text-white/45">
 										{selectedCameraLabel}
 									</div>
-								)}
-								{webcamExpanded &&
-									(isCameraDevicesLoading ? (
-										<span className="text-white/40 text-[10px] italic">
-											{t("webcam.searching")}
-										</span>
-									) : cameraDevicesError ? (
-										<span className="text-white/40 text-[10px] italic">
-											{t("webcam.unavailable")}
-										</span>
-									) : cameraDevices.length === 0 ? (
-										<span className="text-white/40 text-[10px] italic">
-											{t("webcam.noneFound")}
-										</span>
-									) : (
-										<>
-											<select
-												value={webcamDeviceId || selectedCameraId}
-												onChange={(e) => {
-													const device = cameraDevices.find(
-														(item) => item.deviceId === e.target.value,
-													);
-													setSelectedCameraId(e.target.value);
-													setWebcamDeviceId(e.target.value);
-													setWebcamDeviceName(device?.label);
-												}}
-												className="w-full appearance-none bg-white/5 text-white text-[11px] rounded-lg pl-2 pr-6 py-1 border border-white/10 outline-none hover:bg-white/10 transition-colors cursor-pointer"
-											>
-												{cameraDevices.map((device) => (
-													<option
-														key={device.deviceId}
-														value={device.deviceId}
-														className="bg-[#1c1c24]"
-													>
-														{device.label}
-													</option>
-												))}
-											</select>
-											<ChevronDown
-												size={12}
-												className="absolute right-1.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none"
-											/>
-										</>
-									))}
-								{(!webcamExpanded || cameraDevices.length === 0) && (
-									<select
-										value={webcamDeviceId || selectedCameraId}
-										onChange={(e) => {
-											const device = cameraDevices.find((item) => item.deviceId === e.target.value);
-											setSelectedCameraId(e.target.value);
-											setWebcamDeviceId(e.target.value);
-											setWebcamDeviceName(device?.label);
-										}}
-										className="sr-only"
-									>
-										{cameraDevices.map((device) => (
-											<option key={device.deviceId} value={device.deviceId}>
-												{device.label}
-											</option>
-										))}
-									</select>
+								) : (
+									<>
+										<select
+											value={webcamDeviceId || selectedCameraId}
+											onChange={(event) => {
+												const device = cameraDevices.find(
+													(item) => item.deviceId === event.target.value,
+												);
+												setSelectedCameraId(event.target.value);
+												setWebcamDeviceId(event.target.value);
+												setWebcamDeviceName(device?.label);
+											}}
+											className="h-7 w-full appearance-none rounded-lg border border-white/10 bg-white/5 pl-2 pr-7 text-[10px] text-white outline-none transition-colors hover:bg-white/10"
+										>
+											{cameraDevices.map((device) => (
+												<option
+													key={device.deviceId}
+													value={device.deviceId}
+													className="bg-[#1c1c24]"
+												>
+													{device.label}
+												</option>
+											))}
+										</select>
+										<ChevronDown
+											size={12}
+											className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/40"
+										/>
+									</>
 								)}
 							</div>
 						</div>
@@ -972,7 +790,7 @@ export function LaunchWindow() {
 				onPointerDown={() => setHudMouseEventsEnabled(true)}
 				onMouseEnter={() => setHudMouseEventsEnabled(true)}
 				onMouseLeave={() => {
-					if (!isLanguageMenuOpen && !isYandexDiskOpen) {
+					if (!isYandexDiskOpen) {
 						setHudMouseEventsEnabled(false);
 					}
 				}}
@@ -988,33 +806,6 @@ export function LaunchWindow() {
 				>
 					{getIcon("drag", "text-white/30")}
 				</div>
-
-				<Tooltip
-					content={
-						trayLayout === "horizontal"
-							? t("tooltips.useVerticalTray")
-							: t("tooltips.useHorizontalTray")
-					}
-				>
-					<button
-						data-testid="launch-tray-layout-button"
-						type="button"
-						aria-label={
-							trayLayout === "horizontal"
-								? t("tooltips.useVerticalTray")
-								: t("tooltips.useHorizontalTray")
-						}
-						aria-pressed={trayLayout === "vertical"}
-						className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
-						onClick={toggleTrayLayout}
-					>
-						{trayLayout === "horizontal" ? (
-							<Columns3 size={ICON_SIZE} className="text-white/60" />
-						) : (
-							<Rows3 size={ICON_SIZE} className="text-white/60" />
-						)}
-					</button>
-				</Tooltip>
 
 				{/* Source selector */}
 				<button
@@ -1092,10 +883,15 @@ export function LaunchWindow() {
 								)
 							}
 							disabled={recording || saving}
+							aria-label={
+								cursorCaptureMode === "editable-overlay"
+									? "Редактируемый курсор"
+									: "Системный курсор"
+							}
 							title={
 								cursorCaptureMode === "editable-overlay"
-									? t("cursor.useSystemCursor")
-									: t("cursor.useEditableCursor")
+									? "Редактируемый курсор — его размер и эффекты можно менять в редакторе"
+									: "Системный курсор — записывается прямо в видео и не редактируется"
 							}
 						>
 							{getIcon(
@@ -1222,35 +1018,14 @@ export function LaunchWindow() {
 						aria-label={locale === "ru" ? "Настроить Яндекс Диск" : "Configure Yandex Disk"}
 						disabled={recording || saving}
 						className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
-						onClick={() => {
-							setIsLanguageMenuOpen(false);
-							setIsYandexDiskOpen((open) => !open);
-						}}
+						onClick={() => setIsYandexDiskOpen((open) => !open)}
 					>
 						<CloudUpload
 							size={ICON_SIZE}
-							className={
-								yandexDiskSettings?.connected && yandexDiskSettings.autoUpload
-									? "text-emerald-400"
-									: "text-white/45"
-							}
+							className={yandexDiskSettings?.connected ? "text-emerald-400" : "text-white/45"}
 						/>
 					</button>
 				</Tooltip>
-
-				{!isLinuxHud && (
-					<Tooltip content={t("tooltips.openNotes")}>
-						<button
-							type="button"
-							aria-label={t("tooltips.openNotes")}
-							disabled={saving}
-							className={`${hudIconBtnClasses} ${styles.electronNoDrag} ${saving ? "opacity-30 cursor-not-allowed pointer-events-none" : ""}`}
-							onClick={() => !saving && window.electronAPI.openNotes()}
-						>
-							<NotepadText size={ICON_SIZE} className="text-white/60" />
-						</button>
-					</Tooltip>
-				)}
 
 				{!recording && (
 					<Tooltip content={t("tooltips.openStudio")}>
@@ -1269,79 +1044,6 @@ export function LaunchWindow() {
 				<div
 					className={`${trayLayout === "vertical" ? hudSidebarVerticalClasses : hudSidebarClasses} ${styles.electronNoDrag}`}
 				>
-					<div className={`${styles.languageMenuContainer} ${styles.electronNoDrag}`}>
-						<button
-							ref={languageTriggerRef}
-							type="button"
-							aria-label={t("language")}
-							aria-expanded={isLanguageMenuOpen}
-							aria-haspopup="menu"
-							disabled={saving}
-							onClick={() => {
-								if (saving) return;
-								setIsYandexDiskOpen(false);
-								setIsLanguageMenuOpen((open) => !open);
-							}}
-							title={activeLanguageLabel}
-							className={`flex h-8 items-center rounded-lg border border-white/10 bg-white/[0.045] text-white/85 shadow-none transition-colors hover:bg-white/10 ${
-								trayLayout === "vertical" ? "w-8 justify-center px-0" : "gap-1.5 px-2"
-							} ${styles.electronNoDrag} ${saving ? "opacity-30 cursor-not-allowed pointer-events-none" : ""}`}
-						>
-							<Languages size={13} className="text-white/70" />
-							<span
-								className={`${trayLayout === "vertical" ? "sr-only" : "max-w-[54px]"} truncate text-[10px] font-semibold text-white/75`}
-							>
-								{activeLanguageLabel}
-							</span>
-						</button>
-					</div>
-
-					{isLanguageMenuOpen
-						? createPortal(
-								<div
-									ref={setLanguageMenuPanelEl}
-									data-hud-interactive="true"
-									role="menu"
-									className={`${styles.languageMenuPanel} ${styles.languageMenuScroll} ${styles.electronNoDrag}`}
-									style={
-										{
-											WebkitAppRegion: "no-drag",
-											pointerEvents: "auto",
-											right: `${languageMenuStyle.right}px`,
-											top: `${languageMenuStyle.top}px`,
-											maxHeight: `${languageMenuStyle.maxHeight}px`,
-										} as React.CSSProperties
-									}
-									onPointerDown={(event) => event.stopPropagation()}
-									onPointerEnter={() => setHudMouseEventsEnabled(true)}
-									onPointerMove={() => setHudMouseEventsEnabled(true)}
-									onWheel={(event) => {
-										setHudMouseEventsEnabled(true);
-										event.stopPropagation();
-									}}
-								>
-									{availableLocales.map((loc) => (
-										<button
-											key={loc}
-											type="button"
-											role="menuitemradio"
-											aria-checked={loc === locale}
-											onClick={() => {
-												setLocale(loc);
-												resolveSystemLocaleSuggestion();
-												setIsLanguageMenuOpen(false);
-											}}
-											className={`${styles.languageMenuItem} ${loc === locale ? styles.languageMenuItemActive : ""}`}
-										>
-											<span className="truncate">{getLocaleName(loc)}</span>
-											{loc === locale ? <Check size={11} className="text-white/85" /> : null}
-										</button>
-									))}
-								</div>,
-								document.body,
-							)
-						: null}
-
 					{/* Window controls */}
 					<div
 						className={`flex items-center gap-0.5 ${trayLayout === "vertical" ? "flex-col" : ""}`}

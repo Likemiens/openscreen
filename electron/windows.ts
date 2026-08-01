@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { BrowserWindow, ipcMain, screen } from "electron";
+import type { EditorLaunchOptions } from "../src/lib/editorLaunch";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -84,7 +85,7 @@ ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
  * Frameless transparent HUD overlay, always-on-top, centred at the bottom of the
  * primary display. Follows the user across macOS Spaces so it isn't lost on switch.
  */
-export function createHudOverlayWindow(): BrowserWindow {
+export function createHudOverlayWindow(options: { startHidden?: boolean } = {}): BrowserWindow {
 	const primaryDisplay = screen.getPrimaryDisplay();
 	const { workArea } = primaryDisplay;
 
@@ -135,7 +136,7 @@ export function createHudOverlayWindow(): BrowserWindow {
 	// Show only once painted to avoid the black rectangle flash when a transparent
 	// window is shown before its first paint.
 	win.once("ready-to-show", () => {
-		if (!HEADLESS) win.show();
+		if (!HEADLESS && !options.startHidden) win.show();
 	});
 
 	win.webContents.on("did-finish-load", () => {
@@ -165,7 +166,7 @@ export function createHudOverlayWindow(): BrowserWindow {
  * Main editor window. Starts maximised with a hidden title bar on macOS; not
  * always-on-top and appears in the taskbar/dock.
  */
-export function createEditorWindow(): BrowserWindow {
+export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWindow {
 	const isMac = process.platform === "darwin";
 
 	const win = new BrowserWindow({
@@ -205,7 +206,7 @@ export function createEditorWindow(): BrowserWindow {
 
 	// Show only once painted to avoid a white flash on cold Vite start.
 	win.once("ready-to-show", () => {
-		if (!HEADLESS) win.show();
+		if (!HEADLESS && !options.backgroundPublish) win.show();
 	});
 
 	// Inject dark background before any React paint so the sub-titlebar area never
@@ -220,11 +221,18 @@ export function createEditorWindow(): BrowserWindow {
 		win?.webContents.send("main-process-message", new Date().toLocaleString());
 	});
 
+	const query = {
+		windowType: "editor",
+		...(options.backgroundPublish ? { backgroundPublish: "true" } : {}),
+		...(options.title ? { title: options.title } : {}),
+	};
 	if (VITE_DEV_SERVER_URL) {
-		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=editor");
+		const editorUrl = new URL(VITE_DEV_SERVER_URL);
+		for (const [key, value] of Object.entries(query)) editorUrl.searchParams.set(key, value);
+		win.loadURL(editorUrl.toString());
 	} else {
 		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { windowType: "editor" },
+			query,
 		});
 	}
 
@@ -322,52 +330,6 @@ export function createCountdownOverlayWindow(): BrowserWindow {
 	} else {
 		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
 			query: { windowType: "countdown-overlay" },
-		});
-	}
-
-	return win;
-}
-
-// Frameless Notes Window for taking notes during a recording.
-export function createNotesWindow(): BrowserWindow {
-	const win = new BrowserWindow({
-		width: 400,
-		height: 540,
-		minWidth: 360,
-		minHeight: 400,
-		maxWidth: 640,
-		maxHeight: 720,
-		title: "OpenScreen - Notes",
-		backgroundColor: "#09090b",
-		resizable: true,
-		alwaysOnTop: true,
-		skipTaskbar: false,
-		show: false,
-		webPreferences: {
-			preload: path.join(__dirname, "preload.mjs"),
-			additionalArguments: [ASSET_BASE_URL_ARG],
-			nodeIntegration: false,
-			contextIsolation: true,
-			backgroundThrottling: false,
-		},
-	});
-
-	// Match the editor: no native OS menu bar on Windows/Linux (reachable via Alt).
-	if (process.platform !== "darwin") {
-		win.setAutoHideMenuBar(true);
-	}
-
-	win.setContentProtection(true);
-	win.once("ready-to-show", () => {
-		win.setContentProtection(true);
-		win.show();
-	});
-
-	if (VITE_DEV_SERVER_URL) {
-		win.loadURL(VITE_DEV_SERVER_URL + "?showNotes=true");
-	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { showNotes: "true" },
 		});
 	}
 

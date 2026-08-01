@@ -4,7 +4,6 @@ export const YANDEX_DISK_PUBLIC_FOLDER_URL = "https://disk.yandex.ru/d/GKhvA2QkX
 export const YANDEX_DISK_OAUTH_URL = `https://oauth.yandex.ru/authorize?response_type=token&client_id=${YANDEX_DISK_OAUTH_CLIENT_ID}&scope=cloud_api%3Adisk.read%20cloud_api%3Adisk.write`;
 
 export interface YandexDiskSettings {
-	autoUpload: boolean;
 	folder: string;
 	deleteLocalAfterUpload: boolean;
 	connected: boolean;
@@ -12,7 +11,6 @@ export interface YandexDiskSettings {
 }
 
 export interface SaveYandexDiskSettingsInput {
-	autoUpload: boolean;
 	folder: string;
 	deleteLocalAfterUpload: boolean;
 	/**
@@ -31,8 +29,13 @@ export interface YandexDiskSettingsResult {
 export interface YandexDiskUploadRequestResult {
 	success: boolean;
 	queued?: boolean;
-	skipped?: "disabled" | "not-connected";
 	error?: string;
+}
+
+export interface YandexDiskUploadRequest {
+	filePath: string;
+	fileName?: string;
+	cleanupSourcePaths?: string[];
 }
 
 export type YandexDiskUploadState =
@@ -49,6 +52,7 @@ export interface YandexDiskUploadStatus {
 	state: YandexDiskUploadState;
 	fileName: string;
 	remotePath: string;
+	publicUrl: string;
 	localDeletion?: YandexDiskLocalDeletionState;
 	error?: string;
 }

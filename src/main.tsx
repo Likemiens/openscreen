@@ -15,9 +15,7 @@ if (!windowType) {
 		clearStaleSourceCache().catch(() => undefined);
 	}, 5_000);
 }
-const showNotes = new URLSearchParams(window.location.search).get("showNotes") === "true";
 if (
-	showNotes ||
 	windowType === "hud-overlay" ||
 	windowType === "source-selector" ||
 	windowType === "countdown-overlay"
