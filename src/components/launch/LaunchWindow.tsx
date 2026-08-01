@@ -2,6 +2,7 @@ import {
 	Check,
 	ChevronDown,
 	Clapperboard,
+	CloudUpload,
 	Columns3,
 	Languages,
 	Loader2,
@@ -31,6 +32,7 @@ import { RxDragHandleDots2 } from "react-icons/rx";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
+import type { YandexDiskSettings } from "@/lib/yandexDisk";
 import { nativeBridgeClient } from "@/native";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import { useCameraDevices } from "../../hooks/useCameraDevices";
@@ -43,6 +45,7 @@ import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
+import { YandexDiskSettingsPanel } from "./YandexDiskSettingsPanel";
 
 const ICON_SIZE = 20;
 
@@ -151,6 +154,8 @@ export function LaunchWindow() {
 	const [isWebcamFocused, setIsWebcamFocused] = useState(false);
 	const webcamExpanded = isWebcamHovered || isWebcamFocused;
 	const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
+	const [isYandexDiskOpen, setIsYandexDiskOpen] = useState(false);
+	const [yandexDiskSettings, setYandexDiskSettings] = useState<YandexDiskSettings | null>(null);
 	const [trayLayout, setTrayLayout] = useState<"horizontal" | "vertical">(
 		() => loadUserPreferences().trayLayout,
 	);
@@ -162,6 +167,7 @@ export function LaunchWindow() {
 	const deviceSelectorRef = useRef<HTMLDivElement | null>(null);
 	const systemLocalePromptRef = useRef<HTMLDivElement | null>(null);
 	const softwareFallbackNoticeRef = useRef<HTMLDivElement | null>(null);
+	const yandexDiskPanelRef = useRef<HTMLDivElement | null>(null);
 	// Measured bar height, anchors the popups above the tall vertical tray so they don't overlap it.
 	const [hudBarHeight, setHudBarHeight] = useState(0);
 	const [languageMenuStyle, setLanguageMenuStyle] = useState<{
@@ -237,6 +243,22 @@ export function LaunchWindow() {
 				}
 			});
 
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		if (!window.electronAPI?.getYandexDiskSettings) return;
+		let cancelled = false;
+		void window.electronAPI
+			.getYandexDiskSettings()
+			.then((result) => {
+				if (!cancelled && result.success && result.settings) {
+					setYandexDiskSettings(result.settings);
+				}
+			})
+			.catch((error) => console.warn("Failed to load Yandex Disk settings:", error));
 		return () => {
 			cancelled = true;
 		};
@@ -393,6 +415,16 @@ export function LaunchWindow() {
 			halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
 		}
 
+		if (yandexDiskPanelRef.current) {
+			const rect = yandexDiskPanelRef.current.getBoundingClientRect();
+			const popupBottomOffset =
+				trayLayout === "vertical"
+					? barEl.scrollHeight + HUD_DEVICE_POPUP_GAP
+					: HUD_DEVICE_POPUP_HORIZONTAL_BOTTOM;
+			topFromBottom = Math.max(topFromBottom, popupBottomOffset + rect.height);
+			halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
+		}
+
 		setHudBarHeight((prev) => {
 			const next = Math.round(barEl.scrollHeight);
 			return Math.abs(prev - next) > 1 ? next : prev;
@@ -419,6 +451,7 @@ export function LaunchWindow() {
 		if (systemLocalePromptRef.current) observer.observe(systemLocalePromptRef.current);
 		if (softwareFallbackNoticeRef.current) observer.observe(softwareFallbackNoticeRef.current);
 		if (languageMenuPanelRef.current) observer.observe(languageMenuPanelRef.current);
+		if (yandexDiskPanelRef.current) observer.observe(yandexDiskPanelRef.current);
 		measureHudSize();
 		return () => {
 			observer.disconnect();
@@ -456,6 +489,10 @@ export function LaunchWindow() {
 		(el: HTMLDivElement | null) => observeHudElement(el, softwareFallbackNoticeRef),
 		[observeHudElement],
 	);
+	const setYandexDiskPanelEl = useCallback(
+		(el: HTMLDivElement | null) => observeHudElement(el, yandexDiskPanelRef),
+		[observeHudElement],
+	);
 
 	const hudIgnoreMouseEventsRef = useRef<boolean | undefined>(undefined);
 	const setHudMouseEventsEnabled = useCallback(
@@ -478,8 +515,8 @@ export function LaunchWindow() {
 	}, [setHudMouseEventsEnabled]);
 
 	useEffect(() => {
-		setHudMouseEventsEnabled(isLanguageMenuOpen);
-	}, [isLanguageMenuOpen, setHudMouseEventsEnabled]);
+		setHudMouseEventsEnabled(isLanguageMenuOpen || isYandexDiskOpen);
+	}, [isLanguageMenuOpen, isYandexDiskOpen, setHudMouseEventsEnabled]);
 
 	const defaultSourceName = t("sourceSelector.defaultSourceName");
 	const [selectedSource, setSelectedSource] = useState(defaultSourceName);
@@ -670,11 +707,13 @@ export function LaunchWindow() {
 			onPointerMove={(event) => {
 				const target = event.target as HTMLElement | null;
 				const shouldCapture =
-					isLanguageMenuOpen || Boolean(target?.closest("[data-hud-interactive='true']"));
+					isLanguageMenuOpen ||
+					isYandexDiskOpen ||
+					Boolean(target?.closest("[data-hud-interactive='true']"));
 				setHudMouseEventsEnabled(shouldCapture);
 			}}
 			onPointerLeave={() => {
-				if (!isLanguageMenuOpen) {
+				if (!isLanguageMenuOpen && !isYandexDiskOpen) {
 					setHudMouseEventsEnabled(false);
 				}
 			}}
@@ -905,6 +944,20 @@ export function LaunchWindow() {
 				</div>
 			)}
 
+			<YandexDiskSettingsPanel
+				ref={setYandexDiskPanelEl}
+				open={isYandexDiskOpen}
+				settings={yandexDiskSettings}
+				isRussian={locale === "ru"}
+				bottomOffset={
+					trayLayout === "vertical"
+						? hudBarHeight + HUD_DEVICE_POPUP_GAP
+						: HUD_DEVICE_POPUP_HORIZONTAL_BOTTOM
+				}
+				onClose={() => setIsYandexDiskOpen(false)}
+				onSettingsChange={setYandexDiskSettings}
+			/>
+
 			{/* HUD bar, fixed at bottom center, viewport-relative, never moves */}
 			<div
 				ref={setHudBarEl}
@@ -919,7 +972,7 @@ export function LaunchWindow() {
 				onPointerDown={() => setHudMouseEventsEnabled(true)}
 				onMouseEnter={() => setHudMouseEventsEnabled(true)}
 				onMouseLeave={() => {
-					if (!isLanguageMenuOpen) {
+					if (!isLanguageMenuOpen && !isYandexDiskOpen) {
 						setHudMouseEventsEnabled(false);
 					}
 				}}
@@ -1163,6 +1216,28 @@ export function LaunchWindow() {
 					</div>
 				)}
 
+				<Tooltip content={locale === "ru" ? "Настроить Яндекс Диск" : "Configure Yandex Disk"}>
+					<button
+						type="button"
+						aria-label={locale === "ru" ? "Настроить Яндекс Диск" : "Configure Yandex Disk"}
+						disabled={recording || saving}
+						className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
+						onClick={() => {
+							setIsLanguageMenuOpen(false);
+							setIsYandexDiskOpen((open) => !open);
+						}}
+					>
+						<CloudUpload
+							size={ICON_SIZE}
+							className={
+								yandexDiskSettings?.connected && yandexDiskSettings.autoUpload
+									? "text-emerald-400"
+									: "text-white/45"
+							}
+						/>
+					</button>
+				</Tooltip>
+
 				{!isLinuxHud && (
 					<Tooltip content={t("tooltips.openNotes")}>
 						<button
@@ -1202,7 +1277,11 @@ export function LaunchWindow() {
 							aria-expanded={isLanguageMenuOpen}
 							aria-haspopup="menu"
 							disabled={saving}
-							onClick={() => !saving && setIsLanguageMenuOpen((open) => !open)}
+							onClick={() => {
+								if (saving) return;
+								setIsYandexDiskOpen(false);
+								setIsLanguageMenuOpen((open) => !open);
+							}}
 							title={activeLanguageLabel}
 							className={`flex h-8 items-center rounded-lg border border-white/10 bg-white/[0.045] text-white/85 shadow-none transition-colors hover:bg-white/10 ${
 								trayLayout === "vertical" ? "w-8 justify-center px-0" : "gap-1.5 px-2"

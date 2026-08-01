@@ -19,6 +19,7 @@ import {
 	unregisterAllGlobalShortcuts,
 } from "./globalShortcut";
 import { mainT, setMainLocale } from "./i18n";
+import { registerYandexDiskIpcHandlers } from "./integrations/yandexDisk";
 import { getSelectedDesktopSource, registerIpcHandlers } from "./ipc/handlers";
 import { acquireStableInstanceLock } from "./singleInstanceLock";
 import {
@@ -587,6 +588,7 @@ appReady?.then(async () => {
 	updateTrayMenu();
 	setupApplicationMenu();
 	await ensureRecordingsDir();
+	registerYandexDiskIpcHandlers(ipcMain, RECORDINGS_DIR, app.getPath("userData"));
 
 	function switchToHudWrapper() {
 		if (mainWindow) {

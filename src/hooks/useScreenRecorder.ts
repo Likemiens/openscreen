@@ -48,6 +48,21 @@ const AUDIO_BITRATE_SYSTEM = 192_000;
 
 const WEBCAM_TARGET_FRAME_RATE = 30;
 
+function queueYandexDiskUpload(filePath?: string): void {
+	if (!filePath || !window.electronAPI?.uploadRecordingToYandexDisk) return;
+
+	void window.electronAPI
+		.uploadRecordingToYandexDisk(filePath)
+		.then((result) => {
+			if (!result.success) {
+				toast.error(result.error ?? "Failed to queue the Yandex Disk upload");
+			}
+		})
+		.catch((error) => {
+			console.error("Failed to queue the Yandex Disk upload:", error);
+		});
+}
+
 type UseScreenRecorderReturn = {
 	recording: boolean;
 	paused: boolean;
@@ -405,6 +420,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					} else if (result.path) {
 						await window.electronAPI.setCurrentVideoPath(result.path);
 					}
+					queueYandexDiskUpload(result.session?.screenVideoPath ?? result.path);
 
 					await window.electronAPI.switchToEditor();
 				} catch (error) {
@@ -516,6 +532,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				} else if (result.path) {
 					await window.electronAPI.setCurrentVideoPath(result.path);
 				}
+				queueYandexDiskUpload(storedSession?.screenVideoPath ?? result.path);
 
 				await window.electronAPI.switchToEditor();
 				return true;
@@ -620,6 +637,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				} else if (result.path) {
 					await window.electronAPI.setCurrentVideoPath(result.path);
 				}
+				queueYandexDiskUpload(result.session?.screenVideoPath ?? result.path);
 
 				await window.electronAPI.switchToEditor();
 				return true;

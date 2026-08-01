@@ -3,6 +3,7 @@ import type { NativeMacRecordingRequest } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
 import type { RecordingSession, StoreRecordedSessionInput } from "../src/lib/recordingSession";
 import type { ShortcutBinding } from "../src/lib/shortcuts";
+import type { SaveYandexDiskSettingsInput, YandexDiskUploadStatus } from "../src/lib/yandexDisk";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
 
 // Asset base URL is passed from the main process via webPreferences.additionalArguments
@@ -149,6 +150,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = () => callback();
 		ipcRenderer.on("stop-recording-from-tray", listener);
 		return () => ipcRenderer.removeListener("stop-recording-from-tray", listener);
+	},
+	getYandexDiskSettings: () => {
+		return ipcRenderer.invoke("get-yandex-disk-settings");
+	},
+	saveYandexDiskSettings: (settings: SaveYandexDiskSettingsInput) => {
+		return ipcRenderer.invoke("save-yandex-disk-settings", settings);
+	},
+	disconnectYandexDisk: () => {
+		return ipcRenderer.invoke("disconnect-yandex-disk");
+	},
+	uploadRecordingToYandexDisk: (filePath: string) => {
+		return ipcRenderer.invoke("upload-recording-to-yandex-disk", filePath);
+	},
+	onYandexDiskUploadStatus: (callback: (status: YandexDiskUploadStatus) => void) => {
+		const listener = (_event: unknown, status: YandexDiskUploadStatus) => callback(status);
+		ipcRenderer.on("yandex-disk-upload-status", listener);
+		return () => ipcRenderer.removeListener("yandex-disk-upload-status", listener);
 	},
 	openExternalUrl: (url: string) => {
 		return ipcRenderer.invoke("open-external-url", url);

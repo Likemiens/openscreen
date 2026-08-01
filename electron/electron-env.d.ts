@@ -177,6 +177,17 @@ interface Window {
 			error?: string;
 		}>;
 		onStopRecordingFromTray: (callback: () => void) => () => void;
+		getYandexDiskSettings: () => Promise<import("../src/lib/yandexDisk").YandexDiskSettingsResult>;
+		saveYandexDiskSettings: (
+			settings: import("../src/lib/yandexDisk").SaveYandexDiskSettingsInput,
+		) => Promise<import("../src/lib/yandexDisk").YandexDiskSettingsResult>;
+		disconnectYandexDisk: () => Promise<import("../src/lib/yandexDisk").YandexDiskSettingsResult>;
+		uploadRecordingToYandexDisk: (
+			filePath: string,
+		) => Promise<import("../src/lib/yandexDisk").YandexDiskUploadRequestResult>;
+		onYandexDiskUploadStatus: (
+			callback: (status: import("../src/lib/yandexDisk").YandexDiskUploadStatus) => void,
+		) => () => void;
 		openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
 		pickExportSavePath: (
 			fileName: string,

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { NotesWindow } from "./components/launch/NotesWindow.tsx";
@@ -15,6 +16,31 @@ const ShortcutsConfigDialog = lazy(() =>
 		default: module.ShortcutsConfigDialog,
 	})),
 );
+
+function YandexDiskUploadNotifications() {
+	useEffect(() => {
+		return window.electronAPI?.onYandexDiskUploadStatus?.((status) => {
+			const toastId = `yandex-disk-${status.uploadId}`;
+			if (status.state === "uploading") {
+				toast.loading(`Uploading ${status.fileName} to Yandex Disk…`, { id: toastId });
+				return;
+			}
+			if (status.state === "success") {
+				toast.success(`Saved ${status.fileName} to Yandex Disk`, {
+					id: toastId,
+					description: status.remotePath,
+				});
+				return;
+			}
+			toast.error(`Yandex Disk upload failed`, {
+				id: toastId,
+				description: status.error,
+			});
+		});
+	}, []);
+
+	return null;
+}
 
 export default function App() {
 	const [windowType, setWindowType] = useState(
@@ -116,6 +142,7 @@ export default function App() {
 
 	return (
 		<TooltipProvider>
+			<YandexDiskUploadNotifications />
 			{showNotes ? <NotesWindow /> : content}
 			<Toaster theme="dark" />
 		</TooltipProvider>
