@@ -9,6 +9,7 @@ import {
 	Notification,
 	nativeImage,
 	session,
+	shell,
 	systemPreferences,
 	Tray,
 } from "electron";
@@ -576,16 +577,20 @@ appReady?.then(async () => {
 		setupApplicationMenu();
 		updateTrayMenu();
 	});
-	ipcMain.handle("finish-background-publish", (_, error?: string) => {
+	ipcMain.handle("finish-background-publish", (_, error?: string, savedPath?: string) => {
 		const backgroundEditor = mainWindow;
 		mainWindow = createHudOverlayWindow({ startHidden: true });
 		yandexDiskIntegration?.setEditorActive(false);
 		editorHasUnsavedChanges = false;
-		if (error && Notification.isSupported()) {
-			new Notification({
-				title: "OpenScreen · публикация не удалась",
-				body: error,
-			}).show();
+		if (Notification.isSupported() && (error || savedPath)) {
+			const notification = new Notification({
+				title: error ? "OpenScreen · Export failed" : "OpenScreen · Video saved",
+				body: error ?? savedPath ?? "Export complete",
+			});
+			if (savedPath && !error) {
+				notification.on("click", () => shell.showItemInFolder(savedPath));
+			}
+			notification.show();
 		}
 		if (backgroundEditor && !backgroundEditor.isDestroyed()) {
 			forceCloseEditorWindow(backgroundEditor);

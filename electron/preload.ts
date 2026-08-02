@@ -43,8 +43,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	switchToEditor: (options?: import("../src/lib/editorLaunch").EditorLaunchOptions) => {
 		return ipcRenderer.invoke("switch-to-editor", options);
 	},
-	finishBackgroundPublish: (error?: string) =>
-		ipcRenderer.invoke("finish-background-publish", error),
+	finishBackgroundPublish: (error?: string, savedPath?: string) =>
+		ipcRenderer.invoke("finish-background-publish", error, savedPath),
 	switchToHud: () => {
 		return ipcRenderer.invoke("switch-to-hud");
 	},

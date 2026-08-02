@@ -1,4 +1,4 @@
-import { ChevronDown, Clapperboard, CloudUpload, Loader2 } from "lucide-react";
+import { ChevronDown, Clapperboard, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BsPauseCircle, BsPlayCircle, BsRecordCircle } from "react-icons/bs";
 import { FaRegStopCircle } from "react-icons/fa";
@@ -18,7 +18,8 @@ import {
 	MdVolumeUp,
 } from "react-icons/md";
 import { RxDragHandleDots2 } from "react-icons/rx";
-import { useI18n, useScopedT } from "@/contexts/I18nContext";
+import yandexDiskLogo from "@/assets/yandex-disk.svg";
+import { useScopedT } from "@/contexts/I18nContext";
 import type { YandexDiskSettings } from "@/lib/yandexDisk";
 import { nativeBridgeClient } from "@/native";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
@@ -38,10 +39,10 @@ import { YandexDiskSettingsPanel } from "./YandexDiskSettingsPanel";
 
 const ICON_SIZE = 20;
 
-// Vertical tray gap (px): bar's `bottom-5` (20px) plus an 8px gap.
-const HUD_DEVICE_POPUP_GAP = 28;
-// Horizontal layout: mirrors the `bottom-[68px]` class on the popup element.
-const HUD_DEVICE_POPUP_HORIZONTAL_BOTTOM = 68;
+// Keep floating panels clear of the toolbar's compact shadow and rounded edge.
+const HUD_DEVICE_POPUP_GAP = 12;
+// Horizontal layout: 32px viewport inset + 56px toolbar + 12px safe gap.
+const HUD_DEVICE_POPUP_HORIZONTAL_BOTTOM = 100;
 
 const ICON_CONFIG = {
 	drag: { icon: RxDragHandleDots2, size: ICON_SIZE },
@@ -77,23 +78,26 @@ function getIcon(name: IconName, className?: string) {
 const hudDisabledClasses =
 	"disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none";
 
-const hudGroupClasses = `flex items-center gap-0.5 rounded-xl border border-white/[0.07] bg-white/[0.045] transition-colors duration-150 hover:bg-white/[0.075] ${hudDisabledClasses}`;
+const hudGroupClasses = "flex shrink-0 items-center gap-1";
 
-const hudIconBtnClasses = `flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer text-white hover:bg-white/10 active:scale-95 ${hudDisabledClasses}`;
+const hudSourceBtnClasses = `flex shrink-0 items-center gap-2 rounded-[10px] border border-white/[0.07] bg-white/[0.035] transition-colors duration-150 hover:border-white/[0.11] hover:bg-white/[0.07] ${hudDisabledClasses}`;
 
-const hudAuxIconBtnClasses = `flex h-7 w-7 items-center justify-center rounded-lg transition-colors duration-150 text-white/55 hover:bg-white/10 ${hudDisabledClasses}`;
+const hudIconBtnClasses = `flex h-9 min-w-9 shrink-0 items-center justify-center rounded-[9px] transition-[background-color,color,opacity,transform] duration-150 cursor-pointer text-white hover:bg-white/[0.09] active:scale-[0.97] ${hudDisabledClasses}`;
 
-const windowBtnClasses = `flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer opacity-50 hover:opacity-90 hover:bg-white/[0.08] ${hudDisabledClasses}`;
+const hudAuxIconBtnClasses = `flex h-9 min-w-9 shrink-0 items-center justify-center rounded-[9px] transition-[background-color,color,opacity] duration-150 text-white/60 hover:bg-white/[0.09] hover:text-white/85 ${hudDisabledClasses}`;
 
-const hudSidebarClasses = "ml-0.5 pl-1.5 border-l border-white/10 flex items-center gap-0.5";
+const windowBtnClasses = `flex h-9 w-9 items-center justify-center rounded-[9px] transition-[background-color,opacity,transform] duration-150 cursor-pointer opacity-50 hover:opacity-90 hover:bg-white/[0.08] active:scale-[0.97] ${hudDisabledClasses}`;
+
+const hudSidebarClasses = "ml-1 border-l border-white/10 pl-2 flex items-center gap-1";
 const hudSidebarVerticalClasses =
-	"mt-0.5 pt-1.5 border-t border-white/10 flex flex-col items-center gap-0.5";
+	"mt-1 border-t border-white/10 pt-2 flex flex-col items-center gap-1";
 
 /** Launches the floating recording HUD and its recorder controls. */
 export function LaunchWindow() {
 	const t = useScopedT("launch");
-	const { locale } = useI18n();
-
+	const isBrowserPreview = !window.electronAPI;
+	const isDraftPreview =
+		isBrowserPreview && new URLSearchParams(window.location.search).get("preview") === "draft";
 	const {
 		recording,
 		paused,
@@ -124,6 +128,7 @@ export function LaunchWindow() {
 		setCompletedRecordingTitle,
 		openCompletedRecordingInEditor,
 		publishCompletedRecording,
+		saveCompletedRecording,
 	} = useScreenRecorder();
 
 	const showMicControls = microphoneEnabled && !recording;
@@ -134,7 +139,16 @@ export function LaunchWindow() {
 	const micExpanded = isMicHovered || isMicFocused;
 
 	const [isYandexDiskOpen, setIsYandexDiskOpen] = useState(false);
-	const [yandexDiskSettings, setYandexDiskSettings] = useState<YandexDiskSettings | null>(null);
+	const [yandexDiskSettings, setYandexDiskSettings] = useState<YandexDiskSettings | null>(() =>
+		isDraftPreview
+			? {
+					folder: "OpenScreen Exports",
+					deleteLocalAfterUpload: true,
+					connected: true,
+					encryptionAvailable: true,
+				}
+			: null,
+	);
 	const [trayLayout] = useState<"horizontal" | "vertical">("horizontal");
 	const [supportsCursorModeToggle, setSupportsCursorModeToggle] = useState(false);
 	const [isLinuxHud, setIsLinuxHud] = useState(false);
@@ -254,11 +268,12 @@ export function LaunchWindow() {
 		// the reported drift. Content size is re-measured once the drag ends instead.
 		if (isDraggingHudRef.current) return;
 
-		// Breathing room so the drop shadow isn't clipped. TOP_MARGIN must also exceed the
+		// Breathing room so the compact shadow never reaches the transparent BrowserWindow edge.
+		// TOP_MARGIN must also exceed the
 		// slack in the bar's `max-h: calc(100vh - 2.5rem)` cap (40px reserved - 20px bottom
 		// gap = 20px) so the window stays tall enough that the cap never engages and adds a scrollbar.
-		const SIDE_MARGIN = 24;
-		const TOP_MARGIN = 24;
+		const SIDE_MARGIN = 72;
+		const TOP_MARGIN = 32;
 		// Wide enough that the language menu (11rem) never clips, even when the bar is narrow.
 		const MIN_WIDTH = 220;
 
@@ -564,7 +579,7 @@ export function LaunchWindow() {
 	if (completedRecording) {
 		return (
 			<div
-				className={`h-full w-full min-w-0 max-w-full overflow-hidden bg-transparent ${styles.electronDrag}`}
+				className={`h-full w-full min-w-0 max-w-full overflow-hidden ${isBrowserPreview ? "bg-[radial-gradient(circle_at_15%_20%,#ff922b_0%,#ef3e16_48%,#b8150f_100%)]" : "bg-transparent"} ${styles.electronDrag}`}
 				onPointerMove={() => setHudMouseEventsEnabled(true)}
 				onPointerLeave={() => {
 					if (!isYandexDiskOpen) setHudMouseEventsEnabled(false);
@@ -574,23 +589,24 @@ export function LaunchWindow() {
 					ref={setYandexDiskPanelEl}
 					open={isYandexDiskOpen}
 					settings={yandexDiskSettings}
-					isRussian
-					bottomOffset={196}
+					isRussian={false}
+					bottomOffset={330}
 					onClose={() => setIsYandexDiskOpen(false)}
 					onSettingsChange={setYandexDiskSettings}
 				/>
 				<div
 					ref={setHudBarEl}
 					data-hud-interactive="true"
-					className={`fixed bottom-5 left-1/2 -translate-x-1/2 rounded-2xl border border-white/[0.10] bg-[#07080a]/95 shadow-[0_20px_60px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl ${styles.electronNoDrag}`}
+					className={`fixed bottom-5 left-1/2 -translate-x-1/2 rounded-2xl border border-white/[0.10] bg-[#140c0d]/95 shadow-[0_20px_60px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl ${isBrowserPreview ? "origin-bottom scale-[0.68]" : ""} ${styles.electronNoDrag}`}
 					onPointerEnter={() => setHudMouseEventsEnabled(true)}
 				>
 					<RecordingCompletePanel
 						draft={completedRecording}
 						yandexConnected={Boolean(yandexDiskSettings?.connected)}
 						onTitleChange={setCompletedRecordingTitle}
-						onPublish={() => void publishCompletedRecording()}
-						onOpenEditor={() => void openCompletedRecordingInEditor()}
+						onPublish={(options) => void publishCompletedRecording(options)}
+						onSaveAnywhere={(options) => void saveCompletedRecording(options)}
+						onOpenEditor={(options) => void openCompletedRecordingInEditor(options)}
 						onConfigureYandex={() => setIsYandexDiskOpen(true)}
 					/>
 				</div>
@@ -602,7 +618,7 @@ export function LaunchWindow() {
 		// Avoid w-screen/h-screen: 100vw can exceed the inner layout width when scrollbars
 		// affect the viewport (Windows), causing a horizontal scrollbar (issue #305).
 		<div
-			className={`h-full w-full min-w-0 max-w-full overflow-x-hidden overflow-y-hidden bg-transparent ${styles.electronDrag}`}
+			className={`h-full w-full min-w-0 max-w-full overflow-x-hidden overflow-y-hidden ${isBrowserPreview ? "bg-[radial-gradient(circle_at_15%_20%,#ff922b_0%,#ef3e16_48%,#b8150f_100%)]" : "bg-transparent"} ${styles.electronDrag}`}
 			onPointerMove={(event) => {
 				const target = event.target as HTMLElement | null;
 				const shouldCapture =
@@ -659,7 +675,7 @@ export function LaunchWindow() {
 				<div
 					ref={setDeviceSelectorEl}
 					data-hud-interactive="true"
-					className={`fixed left-1/2 -translate-x-1/2 flex items-center gap-2 animate-mic-panel-in ${trayLayout === "vertical" ? "" : "bottom-[68px]"} ${styles.electronNoDrag}`}
+					className={`fixed left-1/2 -translate-x-1/2 flex items-center gap-2 animate-mic-panel-in ${trayLayout === "vertical" ? "" : "bottom-[100px]"} ${styles.electronNoDrag}`}
 					style={
 						trayLayout === "vertical"
 							? // Sit above the tall vertical tray, anchored to the measured bar
@@ -766,7 +782,7 @@ export function LaunchWindow() {
 				ref={setYandexDiskPanelEl}
 				open={isYandexDiskOpen}
 				settings={yandexDiskSettings}
-				isRussian={locale === "ru"}
+				isRussian={false}
 				bottomOffset={
 					trayLayout === "vertical"
 						? hudBarHeight + HUD_DEVICE_POPUP_GAP
@@ -780,11 +796,12 @@ export function LaunchWindow() {
 			<div
 				ref={setHudBarEl}
 				data-hud-interactive="true"
+				data-testid="hud-toolbar"
 				data-tray-layout={trayLayout}
-				className={`fixed bottom-5 left-1/2 -translate-x-1/2 flex rounded-2xl border border-white/[0.10] bg-[#07080a]/90 shadow-[0_20px_60px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl backdrop-saturate-[140%] ${
+				className={`${styles.hudSurface} fixed bottom-8 left-1/2 -translate-x-1/2 flex rounded-[15px] ${
 					trayLayout === "vertical"
-						? "max-h-[calc(100vh-2.5rem)] flex-col items-center gap-1 overflow-y-auto px-1 py-1.5"
-						: "items-center gap-1.5 px-2 py-1.5"
+						? "max-h-[calc(100vh-4rem)] flex-col items-center gap-1.5 overflow-y-auto p-2"
+						: "items-center gap-1.5 px-2.5 py-2"
 				}`}
 				onPointerEnter={() => setHudMouseEventsEnabled(true)}
 				onPointerDown={() => setHudMouseEventsEnabled(true)}
@@ -798,7 +815,7 @@ export function LaunchWindow() {
 				{/* Drag handle */}
 				<div
 					data-testid="hud-drag-handle"
-					className={`flex ${trayLayout === "vertical" ? "h-6 w-8" : "h-8 w-7"} cursor-grab items-center justify-center active:cursor-grabbing ${styles.electronNoDrag}`}
+					className={`flex ${trayLayout === "vertical" ? "h-7 w-9" : "h-9 w-7"} cursor-grab items-center justify-center rounded-[9px] transition-colors hover:bg-white/[0.06] active:cursor-grabbing ${styles.electronNoDrag}`}
 					onPointerDown={handleHudDragPointerDown}
 					onPointerMove={handleHudDragPointerMove}
 					onPointerUp={handleHudDragPointerEnd}
@@ -810,7 +827,7 @@ export function LaunchWindow() {
 				{/* Source selector */}
 				<button
 					data-testid="launch-source-selector-button"
-					className={`${hudGroupClasses} h-8 ${trayLayout === "vertical" ? "w-8 justify-center px-0" : "px-2.5"} ${styles.electronNoDrag}`}
+					className={`${hudSourceBtnClasses} h-10 ${trayLayout === "vertical" ? "w-9 justify-center px-0" : "px-3"} ${styles.electronNoDrag}`}
 					onClick={openSourceSelector}
 					disabled={recording || saving}
 					title={selectedSource}
@@ -818,7 +835,7 @@ export function LaunchWindow() {
 				>
 					{getIcon("monitor", "text-white/80")}
 					<span
-						className={`${trayLayout === "vertical" ? "sr-only" : "max-w-[86px]"} truncate text-[11px] font-medium text-white/75`}
+						className={`${trayLayout === "vertical" ? "sr-only" : "max-w-[118px]"} truncate text-[11px] font-medium text-white/80`}
 					>
 						{selectedSource}
 					</span>
@@ -826,11 +843,11 @@ export function LaunchWindow() {
 
 				{/* Audio controls group */}
 				<div
-					className={`${hudGroupClasses} ${trayLayout === "vertical" ? "flex-col py-1" : ""} ${styles.electronNoDrag}`}
+					className={`${hudGroupClasses} ${trayLayout === "vertical" ? "flex-col border-t border-white/10 pt-2" : "ml-0.5 border-l border-white/10 pl-2"} ${styles.electronNoDrag}`}
 				>
 					<button
 						data-testid="launch-system-audio-button"
-						className={`${hudIconBtnClasses} ${systemAudioEnabled ? "drop-shadow-[0_0_4px_rgba(74,222,128,0.4)]" : ""}`}
+						className={`${hudIconBtnClasses} w-auto gap-2 px-2.5 ${systemAudioEnabled ? "drop-shadow-[0_0_3px_rgba(74,222,128,0.35)]" : ""}`}
 						onClick={() => !(recording || saving) && setSystemAudioEnabled(!systemAudioEnabled)}
 						disabled={recording || saving}
 						title={
@@ -840,10 +857,13 @@ export function LaunchWindow() {
 						{systemAudioEnabled
 							? getIcon("volumeOn", "text-green-400")
 							: getIcon("volumeOff", "text-white/40")}
+						<span className="whitespace-nowrap text-[10px] font-medium text-white/60">
+							{systemAudioEnabled ? "System audio" : "No system audio"}
+						</span>
 					</button>
 					<button
 						data-testid="launch-microphone-button"
-						className={`${hudIconBtnClasses} ${microphoneEnabled ? "drop-shadow-[0_0_4px_rgba(74,222,128,0.4)]" : ""}`}
+						className={`${hudIconBtnClasses} w-auto gap-2 px-2.5 ${microphoneEnabled ? "drop-shadow-[0_0_3px_rgba(74,222,128,0.35)]" : ""}`}
 						onClick={toggleMicrophone}
 						disabled={recording || saving}
 						title={microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")}
@@ -854,10 +874,13 @@ export function LaunchWindow() {
 						{microphoneEnabled
 							? getIcon("micOn", "text-green-400")
 							: getIcon("micOff", "text-white/40")}
+						<span className="max-w-[112px] truncate whitespace-nowrap text-[10px] font-medium text-white/60">
+							{microphoneEnabled ? selectedMicLabel : "No microphone"}
+						</span>
 					</button>
 					<button
 						data-testid="launch-webcam-button"
-						className={`${hudIconBtnClasses} ${webcamEnabled ? "drop-shadow-[0_0_4px_rgba(74,222,128,0.4)]" : ""}`}
+						className={`${hudIconBtnClasses} w-auto gap-2 px-2.5 ${webcamEnabled ? "drop-shadow-[0_0_3px_rgba(74,222,128,0.35)]" : ""}`}
 						onClick={async () => {
 							await setWebcamEnabled(!webcamEnabled);
 						}}
@@ -867,6 +890,9 @@ export function LaunchWindow() {
 						{webcamEnabled
 							? getIcon("webcamOn", "text-green-400")
 							: getIcon("webcamOff", "text-white/40")}
+						<span className="max-w-[112px] truncate whitespace-nowrap text-[10px] font-medium text-white/60">
+							{webcamEnabled ? selectedCameraLabel : "No camera"}
+						</span>
 					</button>
 					{supportsCursorModeToggle && (
 						<button
@@ -884,14 +910,12 @@ export function LaunchWindow() {
 							}
 							disabled={recording || saving}
 							aria-label={
-								cursorCaptureMode === "editable-overlay"
-									? "Редактируемый курсор"
-									: "Системный курсор"
+								cursorCaptureMode === "editable-overlay" ? "Editable cursor" : "System cursor"
 							}
 							title={
 								cursorCaptureMode === "editable-overlay"
-									? "Редактируемый курсор — его размер и эффекты можно менять в редакторе"
-									: "Системный курсор — записывается прямо в видео и не редактируется"
+									? "Editable cursor — adjust its size and effects in Studio"
+									: "System cursor — baked into the video and cannot be edited"
 							}
 						>
 							{getIcon(
@@ -907,15 +931,17 @@ export function LaunchWindow() {
 					content={
 						saving
 							? t("recording.saving")
-							: hasSelectedSource || recording
-								? selectedSource
-								: t("recording.selectSource")
+							: recording
+								? "Stop recording"
+								: hasSelectedSource || recording
+									? selectedSource
+									: t("recording.selectSource")
 					}
 				>
 					<button
 						data-testid="launch-record-button"
 						disabled={saving}
-						className={`flex items-center justify-center rounded-full p-2 transition-[min-width,background-color] duration-150 ${recording || saving ? "min-w-[78px]" : "min-w-[36px]"} ${trayLayout === "vertical" ? "min-h-9" : ""} ${styles.electronNoDrag} ${
+						className={`flex h-10 items-center justify-center rounded-xl px-3 transition-[min-width,background-color] duration-150 ${recording || saving ? "min-w-[96px]" : "min-w-[84px]"} ${trayLayout === "vertical" ? "min-h-9" : ""} ${styles.electronNoDrag} ${
 							saving
 								? "bg-white/[0.06] opacity-60 cursor-not-allowed"
 								: recording
@@ -930,16 +956,20 @@ export function LaunchWindow() {
 						title={
 							saving
 								? t("recording.saving")
-								: hasSelectedSource || recording
-									? selectedSource
-									: t("recording.selectSource")
+								: recording
+									? "Stop recording"
+									: hasSelectedSource || recording
+										? selectedSource
+										: t("recording.selectSource")
 						}
 						aria-label={
 							saving
 								? t("recording.saving")
-								: hasSelectedSource || recording
-									? selectedSource
-									: t("recording.selectSource")
+								: recording
+									? "Stop recording"
+									: hasSelectedSource || recording
+										? selectedSource
+										: t("recording.selectSource")
 						}
 						style={{ flex: "0 0 auto" }}
 					>
@@ -967,20 +997,23 @@ export function LaunchWindow() {
 									{formatTimePadded(elapsedSeconds)}
 								</span>
 							)}
+							{!recording && !saving && (
+								<span className="text-[11px] font-semibold text-white/80">Record</span>
+							)}
 						</div>
 					</button>
 				</Tooltip>
 
 				{recording && (
 					<div
-						className={`flex items-center gap-0.5 ${trayLayout === "vertical" ? "flex-col" : ""} ${styles.electronNoDrag}`}
+						className={`flex shrink-0 items-center gap-1 ${trayLayout === "vertical" ? "flex-col" : ""} ${styles.electronNoDrag}`}
 					>
 						{canPauseRecording && (
 							<Tooltip
 								content={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
 							>
 								<button
-									className={hudAuxIconBtnClasses}
+									className={`${hudAuxIconBtnClasses} w-auto gap-1 px-2`}
 									onClick={() => !saving && togglePaused()}
 									disabled={saving}
 								>
@@ -988,41 +1021,45 @@ export function LaunchWindow() {
 										paused ? "resume" : "pause",
 										paused ? "text-amber-400" : "text-white/60",
 									)}
+									<span className="text-[10px]">{paused ? "Resume" : "Pause"}</span>
 								</button>
 							</Tooltip>
 						)}
 						<Tooltip content={t("tooltips.restartRecording")}>
 							<button
-								className={hudAuxIconBtnClasses}
+								className={`${hudAuxIconBtnClasses} w-auto gap-1 px-2`}
 								onClick={() => !saving && restartRecording()}
 								disabled={saving}
 							>
 								{getIcon("restart", "text-white/60")}
+								<span className="text-[10px]">Restart</span>
 							</button>
 						</Tooltip>
 						<Tooltip content={t("tooltips.cancelRecording")}>
 							<button
-								className={hudAuxIconBtnClasses}
+								className={`${hudAuxIconBtnClasses} w-auto gap-1 px-2 text-red-200/70 hover:text-red-100`}
 								onClick={() => !saving && cancelRecording()}
 								disabled={saving}
 							>
 								{getIcon("cancel", "text-white/60")}
+								<span className="text-[10px]">Delete</span>
 							</button>
 						</Tooltip>
 					</div>
 				)}
 
-				<Tooltip content={locale === "ru" ? "Настроить Яндекс Диск" : "Configure Yandex Disk"}>
+				<Tooltip content="Configure Yandex Disk">
 					<button
 						type="button"
-						aria-label={locale === "ru" ? "Настроить Яндекс Диск" : "Configure Yandex Disk"}
+						aria-label="Configure Yandex Disk"
 						disabled={recording || saving}
 						className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
 						onClick={() => setIsYandexDiskOpen((open) => !open)}
 					>
-						<CloudUpload
-							size={ICON_SIZE}
-							className={yandexDiskSettings?.connected ? "text-emerald-400" : "text-white/45"}
+						<img
+							src={yandexDiskLogo}
+							alt=""
+							className={`h-5 w-5 ${yandexDiskSettings?.connected ? "opacity-100" : "opacity-45 grayscale"}`}
 						/>
 					</button>
 				</Tooltip>

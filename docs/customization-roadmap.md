@@ -14,7 +14,7 @@
 | Приоритет | Ставка | Job / ценность | Самый дешёвый RAT |
 |---|---|---|---|
 | P0 | Надёжный Яндекс Диск backup | Не потерять take и открыть его с другого устройства | 10 реальных записей с raw-upload |
-| P0 | Безопасное обновление upstream | Получать bugfix/native improvements без потери кастомных функций | Один полный sync + merge на `custom` |
+| P0 | Безопасное обновление upstream | Получать bugfix/native improvements без потери кастомных функций | Один полный sync + merge на `creator-edition` |
 | P1 | Recording recipes | Одним действием восстановить source, mic, camera, cursor, countdown и export preset | 3 сохранённых preset в local JSON |
 | P1 | Timestamp markers + notes | Во время записи пометить дубль, ошибку, главу или CTA и увидеть marker на timeline | Hotkey + простой marker sidecar |
 | P1 | Take manager | Быстро сравнивать, переименовывать, удалять и возвращаться к дублям | Список последних 10 sessions без media database |

@@ -7,6 +7,19 @@
 	-webkit-app-region: no-drag;
 }
 
+.hudSurface {
+	box-sizing: border-box;
+	isolation: isolate;
+	border: 1px solid rgba(163, 111, 103, 0.64);
+	background: rgba(52, 25, 27, 0.965);
+	box-shadow:
+		0 8px 18px -12px rgba(12, 2, 4, 0.7),
+		0 1px 3px rgba(12, 2, 4, 0.32),
+		inset 0 1px 0 rgba(255, 255, 255, 0.075);
+	backdrop-filter: blur(18px) saturate(125%);
+	-webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
 .languageMenuScroll {
 	max-height: 16rem;
 	overflow-y: auto;

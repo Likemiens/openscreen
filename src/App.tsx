@@ -5,7 +5,7 @@ import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { useI18n, useScopedT } from "./contexts/I18nContext";
+import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { loadAllCustomFonts } from "./lib/customFonts";
 
@@ -17,68 +17,44 @@ const ShortcutsConfigDialog = lazy(() =>
 );
 
 function YandexDiskUploadNotifications() {
-	const { locale } = useI18n();
-	const isRussian = locale === "ru";
-
 	useEffect(() => {
 		return window.electronAPI?.onYandexDiskUploadStatus?.((status) => {
 			const toastId = `yandex-disk-${status.uploadId}`;
 			if (status.state === "uploading") {
-				toast.loading(
-					isRussian
-						? `Публикуем ${status.fileName} в Яндекс Диск…`
-						: `Uploading ${status.fileName} to Yandex Disk…`,
-					{ id: toastId },
-				);
+				toast.loading(`Uploading ${status.fileName} to Yandex Disk…`, { id: toastId });
 				return;
 			}
 			if (status.state === "success") {
 				const description =
 					status.localDeletion === "deleted"
-						? isRussian
-							? "Файл проверен на Диске, локальная копия удалена."
-							: "The file was verified on Disk and the local copy was deleted."
+						? "The link was copied and the local copy was deleted."
 						: status.localDeletion === "pending"
-							? isRussian
-								? "Файл проверен. Локальная копия удалится после выхода из редактора."
-								: "Verified. The local copy will be deleted after you leave the editor."
-							: status.remotePath;
-				toast.success(
-					isRussian
-						? `${status.fileName} успешно отправлен в Яндекс Диск`
-						: `Saved ${status.fileName} to Yandex Disk`,
-					{
-						id: toastId,
-						description,
-						action: {
-							label: isRussian ? "Открыть" : "Open",
-							onClick: () => window.electronAPI.openExternalUrl(status.publicUrl),
-						},
+							? "The link was copied. The local copy will be deleted after Studio closes."
+							: "The public video link was copied to your clipboard.";
+				toast.success(`Published ${status.fileName} to Yandex Disk`, {
+					id: toastId,
+					description,
+					action: {
+						label: "Open video",
+						onClick: () => window.electronAPI.openExternalUrl(status.publicUrl),
 					},
-				);
+				});
 				return;
 			}
 			if (status.state === "local-deleted") {
-				toast.success(
-					isRussian
-						? `Локальная копия ${status.fileName} удалена`
-						: `Deleted local copy of ${status.fileName}`,
-				);
+				toast.success(`Deleted local copy of ${status.fileName}`);
 				return;
 			}
 			if (status.state === "cleanup-error") {
-				toast.error(
-					isRussian ? "Не удалось удалить локальную копию" : "Could not delete local copy",
-					{ description: status.error },
-				);
+				toast.error("Could not delete local copy", { description: status.error });
 				return;
 			}
-			toast.error(isRussian ? "Ошибка загрузки в Яндекс Диск" : "Yandex Disk upload failed", {
+			toast.error("Yandex Disk upload failed", {
 				id: toastId,
 				description: status.error,
 			});
 		});
-	}, [isRussian]);
+	}, []);
 
 	return null;
 }

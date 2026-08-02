@@ -125,6 +125,11 @@ export function createHudOverlayWindow(options: { startHidden?: boolean } = {}):
 			backgroundThrottling: false,
 		},
 	});
+	// Keep the recording controls visible to the user while excluding this window
+	// from screen capture. On Windows this maps to WDA_EXCLUDEFROMCAPTURE.
+	if (process.env["OPENSCREEN_ALLOW_HUD_CAPTURE"] !== "true") {
+		win.setContentProtection(true);
+	}
 	win.setIgnoreMouseEvents(true, { forward: true });
 
 	// Follow the user across macOS Spaces, else the HUD stays pinned to the Space
@@ -206,7 +211,7 @@ export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWi
 
 	// Show only once painted to avoid a white flash on cold Vite start.
 	win.once("ready-to-show", () => {
-		if (!HEADLESS && !options.backgroundPublish) win.show();
+		if (!HEADLESS && !options.backgroundPublish && !options.backgroundSavePath) win.show();
 	});
 
 	// Inject dark background before any React paint so the sub-titlebar area never
@@ -224,7 +229,10 @@ export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWi
 	const query = {
 		windowType: "editor",
 		...(options.backgroundPublish ? { backgroundPublish: "true" } : {}),
+		...(options.backgroundSavePath ? { backgroundSavePath: options.backgroundSavePath } : {}),
 		...(options.title ? { title: options.title } : {}),
+		...(options.quality ? { quality: options.quality } : {}),
+		...(options.frameRate ? { frameRate: String(options.frameRate) } : {}),
 	};
 	if (VITE_DEV_SERVER_URL) {
 		const editorUrl = new URL(VITE_DEV_SERVER_URL);

@@ -14,7 +14,11 @@ OpenScreen остаётся recorder-first инструментом: HUD дол�
 - во время записи настройки, способные изменить pipeline, disabled;
 - tooltip и `aria-label` обязательны;
 - персональная сборка использует только horizontal HUD;
-- после Stop основная строка заменяется карточкой локального draft с названием и двумя CTA;
+- HUD использует тёмную wine-tinted translucent surface из visual reference;
+- во время записи HUD остаётся видимым пользователю, исключается из capture и показывает timer,
+  Stop, Restart и Delete;
+- после Stop основная строка заменяется карточкой локального draft с названием, Quality, FPS и CTA
+  Save Anywhere, Edit in Studio, Publish & Get Link;
 - включённая камера всегда показывает live preview до записи;
 - cursor tooltip описывает текущее состояние, а не только следующее действие переключателя.
 
@@ -39,7 +43,7 @@ OpenScreen остаётся recorder-first инструментом: HUD дол�
 - не добавлять UI-библиотеку ради одной панели;
 - сохранять текущие radius, translucent surfaces и spacing rhythm;
 - не вводить magic colors, если существует семантический цвет состояния;
-- персональная сборка фиксирована на русском; перед upstream PR восстанавливается полный i18n scope.
+- персональная сборка фиксирована на английском; перед upstream PR восстанавливается полный i18n scope.
 
 ## Definition of Done
 

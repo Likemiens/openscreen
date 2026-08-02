@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
+import type { ExportQuality, Mp4FrameRate } from "@/lib/exporter";
 import {
 	type NativeMacRecordingRequest,
 	parseMacDisplayIdFromSourceId,
@@ -12,7 +13,11 @@ import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
-import { createDefaultRecordingTitle, sanitizeRecordingTitle } from "@/lib/recordingDraft";
+import {
+	buildPublishedFileName,
+	createDefaultRecordingTitle,
+	sanitizeRecordingTitle,
+} from "@/lib/recordingDraft";
 import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
@@ -54,6 +59,11 @@ export interface CompletedRecordingDraft {
 	title: string;
 }
 
+export interface CompletedRecordingExportOptions {
+	quality: ExportQuality;
+	frameRate: Mp4FrameRate;
+}
+
 type UseScreenRecorderReturn = {
 	recording: boolean;
 	paused: boolean;
@@ -84,8 +94,9 @@ type UseScreenRecorderReturn = {
 	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
 	completedRecording: CompletedRecordingDraft | null;
 	setCompletedRecordingTitle: (title: string) => void;
-	openCompletedRecordingInEditor: () => Promise<void>;
-	publishCompletedRecording: () => Promise<void>;
+	openCompletedRecordingInEditor: (options: CompletedRecordingExportOptions) => Promise<void>;
+	publishCompletedRecording: (options: CompletedRecordingExportOptions) => Promise<void>;
+	saveCompletedRecording: (options: CompletedRecordingExportOptions) => Promise<void>;
 };
 
 type NativeWindowsRecordingHandle = {
@@ -103,10 +114,14 @@ type NativeMacRecordingHandle = {
 
 export function useScreenRecorder(): UseScreenRecorderReturn {
 	const t = useScopedT("editor");
-	const [recording, setRecording] = useState(false);
+	const browserPreview =
+		import.meta.env.DEV && !window.electronAPI
+			? new URLSearchParams(window.location.search).get("preview")
+			: null;
+	const [recording, setRecording] = useState(browserPreview === "recording");
 	const [paused, setPaused] = useState(false);
 	const [saving, setSaving] = useState(false);
-	const [elapsedSeconds, setElapsedSeconds] = useState(0);
+	const [elapsedSeconds, setElapsedSeconds] = useState(browserPreview === "recording" ? 65 : 0);
 	const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
 	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(undefined);
 	const [microphoneDeviceName, setMicrophoneDeviceName] = useState<string | undefined>(undefined);
@@ -118,7 +133,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
 	const [completedRecording, setCompletedRecording] = useState<CompletedRecordingDraft | null>(
-		null,
+		() =>
+			browserPreview === "draft"
+				? { filePath: "C:\\OpenScreen\\recording.webm", title: "Product walkthrough" }
+				: null,
 	);
 	const screenRecorder = useRef<RecorderHandle | null>(null);
 	const webcamRecorder = useRef<RecorderHandle | null>(null);
@@ -715,6 +733,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	});
 
 	const safeHideCountdownOverlay = useCallback(async (runId: number) => {
+		if (!window.electronAPI?.hideCountdownOverlay) return;
 		try {
 			await window.electronAPI.hideCountdownOverlay(runId);
 		} catch (error) {
@@ -1687,6 +1706,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	};
 
 	useEffect(() => {
+		if (browserPreview === "recording") return;
 		if (!recording) {
 			setElapsedSeconds(0);
 			return;
@@ -1702,7 +1722,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}, 250);
 
 		return () => window.clearInterval(interval);
-	}, [getRecordingDurationMs, paused, recording]);
+	}, [browserPreview, getRecordingDurationMs, paused, recording]);
 
 	const cancelRecording = () => {
 		if (nativeWindowsRecording.current) {
@@ -1750,19 +1770,41 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setCompletedRecording((draft) => (draft ? { ...draft, title } : draft));
 	}, []);
 
-	const openCompletedRecordingInEditor = useCallback(async () => {
-		if (!completedRecording) return;
-		const title = sanitizeRecordingTitle(completedRecording.title);
-		setCompletedRecording(null);
-		await window.electronAPI.switchToEditor({ title });
-	}, [completedRecording]);
+	const openCompletedRecordingInEditor = useCallback(
+		async (options: CompletedRecordingExportOptions) => {
+			if (!completedRecording) return;
+			const title = sanitizeRecordingTitle(completedRecording.title);
+			setCompletedRecording(null);
+			await window.electronAPI.switchToEditor({ title, ...options });
+		},
+		[completedRecording],
+	);
 
-	const publishCompletedRecording = useCallback(async () => {
-		if (!completedRecording) return;
-		const title = sanitizeRecordingTitle(completedRecording.title);
-		setCompletedRecording(null);
-		await window.electronAPI.switchToEditor({ backgroundPublish: true, title });
-	}, [completedRecording]);
+	const publishCompletedRecording = useCallback(
+		async (options: CompletedRecordingExportOptions) => {
+			if (!completedRecording) return;
+			const title = sanitizeRecordingTitle(completedRecording.title);
+			setCompletedRecording(null);
+			await window.electronAPI.switchToEditor({ backgroundPublish: true, title, ...options });
+		},
+		[completedRecording],
+	);
+
+	const saveCompletedRecording = useCallback(
+		async (options: CompletedRecordingExportOptions) => {
+			if (!completedRecording) return;
+			const title = sanitizeRecordingTitle(completedRecording.title);
+			const pickResult = await window.electronAPI.pickExportSavePath(buildPublishedFileName(title));
+			if (pickResult.canceled || !pickResult.success || !pickResult.path) return;
+			setCompletedRecording(null);
+			await window.electronAPI.switchToEditor({
+				backgroundSavePath: pickResult.path,
+				title,
+				...options,
+			});
+		},
+		[completedRecording],
+	);
 
 	return {
 		recording,
@@ -1796,5 +1838,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setCompletedRecordingTitle,
 		openCompletedRecordingInEditor,
 		publishCompletedRecording,
+		saveCompletedRecording,
 	};
 }

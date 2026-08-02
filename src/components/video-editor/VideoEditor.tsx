@@ -45,6 +45,7 @@ import {
 	GifExporter,
 	type GifFrameRate,
 	type GifSizePreset,
+	type Mp4FrameRate,
 	VideoExporter,
 } from "@/lib/exporter";
 import { computeFrameStepTime } from "@/lib/frameStep";
@@ -263,6 +264,10 @@ export default function VideoEditor() {
 	const [showExportDialog, setShowExportDialog] = useState(false);
 	const launchParameters = useMemo(() => new URLSearchParams(window.location.search), []);
 	const isBackgroundPublish = launchParameters.get("backgroundPublish") === "true";
+	const backgroundSavePath = launchParameters.get("backgroundSavePath") ?? undefined;
+	const isBackgroundExport = isBackgroundPublish || Boolean(backgroundSavePath);
+	const launchQuality = launchParameters.get("quality");
+	const launchFrameRate: Mp4FrameRate = launchParameters.get("frameRate") === "30" ? 30 : 60;
 	const [recordingTitle, setRecordingTitle] = useState(() =>
 		sanitizeRecordingTitle(launchParameters.get("title") ?? createDefaultRecordingTitle()),
 	);
@@ -270,7 +275,9 @@ export default function VideoEditor() {
 	const backgroundPublishFinishedRef = useRef(false);
 	const [showNewRecordingDialog, setShowNewRecordingDialog] = useState(false);
 	const [exportQuality, setExportQuality] = useState<ExportQuality>(
-		DEFAULT_EXPORT_SETTINGS.quality,
+		launchQuality === "medium" || launchQuality === "good" || launchQuality === "source"
+			? launchQuality
+			: DEFAULT_EXPORT_SETTINGS.quality,
 	);
 	const [exportFormat, setExportFormat] = useState<ExportFormat>(DEFAULT_EXPORT_SETTINGS.format);
 	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(DEFAULT_GIF_SETTINGS.frameRate);
@@ -2195,26 +2202,26 @@ export default function VideoEditor() {
 	}, [unsavedExport, handleExportSaved]);
 
 	const finishBackgroundPublish = useCallback(
-		async (error?: string) => {
-			if (!isBackgroundPublish || backgroundPublishFinishedRef.current) return;
+		async (error?: string, savedPath?: string) => {
+			if (!isBackgroundExport || backgroundPublishFinishedRef.current) return;
 			backgroundPublishFinishedRef.current = true;
-			await window.electronAPI.finishBackgroundPublish(error);
+			await window.electronAPI.finishBackgroundPublish(error, savedPath);
 		},
-		[isBackgroundPublish],
+		[isBackgroundExport],
 	);
 
 	const handleExport = useCallback(
 		async (settings: ExportSettings, destination: ExportDestination = "local") => {
 			if (!videoPath) {
 				toast.error("No video loaded");
-				await finishBackgroundPublish("Не удалось открыть локальную запись.");
+				await finishBackgroundPublish("Could not open the local recording.");
 				return;
 			}
 
 			const video = videoPlaybackRef.current?.video;
 			if (!video) {
 				toast.error("Video not ready");
-				await finishBackgroundPublish("Видео ещё не готово к публикации.");
+				await finishBackgroundPublish("The video is not ready to export yet.");
 				return;
 			}
 
@@ -2223,10 +2230,12 @@ export default function VideoEditor() {
 			const pickResult =
 				destination === "yandex"
 					? await window.electronAPI.getManagedExportPath(targetFileName)
-					: await window.electronAPI.pickExportSavePath(targetFileName, getExportFolder());
+					: backgroundSavePath
+						? { success: true, path: backgroundSavePath }
+						: await window.electronAPI.pickExportSavePath(targetFileName, getExportFolder());
 			if (!pickResult.success || !pickResult.path) {
 				setShowExportDialog(false);
-				await finishBackgroundPublish(pickResult.message || "Не удалось создать итоговый файл.");
+				await finishBackgroundPublish(pickResult.message || "Could not create the exported file.");
 				return;
 			}
 			const targetPath = pickResult.path;
@@ -2273,7 +2282,12 @@ export default function VideoEditor() {
 
 					setUnsavedExport(null);
 					if (destination === "local") {
-						handleExportSaved(formatLabel, saveResult.path);
+						if (backgroundSavePath) {
+							await window.electronAPI.clearCurrentVideoPath();
+							await finishBackgroundPublish(undefined, saveResult.path);
+						} else {
+							handleExportSaved(formatLabel, saveResult.path);
+						}
 						return;
 					}
 
@@ -2285,11 +2299,11 @@ export default function VideoEditor() {
 						),
 					});
 					if (!uploadResult.success || !uploadResult.queued) {
-						throw new Error(uploadResult.error || "Не удалось запустить публикацию.");
+						throw new Error(uploadResult.error || "Could not start publishing.");
 					}
 
-					toast.success("Видео подготовлено", {
-						description: "Публикация в Яндекс Диск продолжается в фоне.",
+					toast.success("Video prepared", {
+						description: "Publishing to Yandex Disk continues in the background.",
 					});
 					await window.electronAPI.clearCurrentVideoPath();
 					await finishBackgroundPublish();
@@ -2365,7 +2379,7 @@ export default function VideoEditor() {
 						});
 						setExportError(message);
 						toast.error(message);
-						await finishBackgroundPublish(result.error || "Не удалось собрать GIF.");
+						await finishBackgroundPublish(result.error || "Could not render the GIF.");
 					}
 				} else {
 					// MP4 Export
@@ -2386,7 +2400,7 @@ export default function VideoEditor() {
 						webcamVideoUrl: webcamVideoPath || undefined,
 						width: exportWidth,
 						height: exportHeight,
-						frameRate: 60,
+						frameRate: settings.frameRate ?? launchFrameRate,
 						bitrate,
 						codec: "avc1.640033",
 						wallpaper,
@@ -2444,13 +2458,13 @@ export default function VideoEditor() {
 							sourcePath: videoSourcePath ?? videoPath,
 							width: exportWidth,
 							height: exportHeight,
-							frameRate: 60,
+							frameRate: settings.frameRate ?? launchFrameRate,
 							codec: "avc1.640033",
 							bitrate,
 						});
 						setExportError(message);
 						toast.error(message);
-						await finishBackgroundPublish(result.error || "Не удалось собрать видео.");
+						await finishBackgroundPublish(result.error || "Could not render the video.");
 					}
 				}
 
@@ -2490,6 +2504,7 @@ export default function VideoEditor() {
 			webcamVideoPath,
 			webcamVideoSourcePath,
 			recordingTitle,
+			backgroundSavePath,
 			finishBackgroundPublish,
 			wallpaper,
 			zoomRegions,
@@ -2513,6 +2528,7 @@ export default function VideoEditor() {
 			webcamSizePreset,
 			webcamPosition,
 			exportQuality,
+			launchFrameRate,
 			handleExportSaved,
 			cursorTelemetry,
 			cursorClickTimestamps,
@@ -2564,6 +2580,7 @@ export default function VideoEditor() {
 			const settings: ExportSettings = {
 				format: effectiveFormat,
 				quality: effectiveFormat === "mp4" ? exportQuality : undefined,
+				frameRate: effectiveFormat === "mp4" ? launchFrameRate : undefined,
 				gifConfig:
 					effectiveFormat === "gif"
 						? {
@@ -2588,6 +2605,7 @@ export default function VideoEditor() {
 			videoPath,
 			exportFormat,
 			exportQuality,
+			launchFrameRate,
 			gifFrameRate,
 			gifLoop,
 			gifSizePreset,
@@ -2600,8 +2618,8 @@ export default function VideoEditor() {
 	const handlePublish = useCallback(async () => {
 		const settingsResult = await window.electronAPI.getYandexDiskSettings();
 		if (!settingsResult.success || !settingsResult.settings?.connected) {
-			toast.error("Сначала подключите Яндекс Диск", {
-				description: "Вернитесь к окну записи и откройте настройку по значку облака.",
+			toast.error("Connect Yandex Disk first", {
+				description: "Return to the recording toolbar and open Yandex Disk settings.",
 			});
 			return;
 		}
@@ -2611,7 +2629,7 @@ export default function VideoEditor() {
 
 	useEffect(() => {
 		if (
-			!isBackgroundPublish ||
+			!isBackgroundExport ||
 			backgroundPublishStartedRef.current ||
 			loading ||
 			!videoPath ||
@@ -2621,8 +2639,15 @@ export default function VideoEditor() {
 		}
 
 		backgroundPublishStartedRef.current = true;
-		void handleOpenExportDialog("yandex");
-	}, [duration, handleOpenExportDialog, isBackgroundPublish, loading, videoPath]);
+		void handleOpenExportDialog(isBackgroundPublish ? "yandex" : "local");
+	}, [
+		duration,
+		handleOpenExportDialog,
+		isBackgroundExport,
+		isBackgroundPublish,
+		loading,
+		videoPath,
+	]);
 
 	const handleCancelExport = useCallback(() => {
 		if (exporterRef.current) {

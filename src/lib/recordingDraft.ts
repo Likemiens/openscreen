@@ -6,7 +6,7 @@ export const RECORDING_DRAFT_TITLE_MAX_LENGTH = 120;
 export function createDefaultRecordingTitle(createdAt = Date.now()): string {
 	const date = new Date(createdAt);
 	const pad = (value: number) => String(value).padStart(2, "0");
-	return `Запись ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+	return `Recording ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
 		date.getHours(),
 	)}-${pad(date.getMinutes())}`;
 }

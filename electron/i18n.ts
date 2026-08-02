@@ -57,7 +57,7 @@ const messages: Record<Locale, Record<Namespace, MessageMap>> = {
 	"zh-TW": { common: commonZhTw, dialogs: dialogsZhTw },
 };
 
-let currentLocale: Locale = "ru";
+let currentLocale: Locale = "en";
 
 export function setMainLocale(locale: string) {
 	if (

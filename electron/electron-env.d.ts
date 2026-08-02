@@ -31,7 +31,7 @@ interface Window {
 		switchToEditor: (
 			options?: import("../src/lib/editorLaunch").EditorLaunchOptions,
 		) => Promise<void>;
-		finishBackgroundPublish: (error?: string) => Promise<{ success: boolean }>;
+		finishBackgroundPublish: (error?: string, savedPath?: string) => Promise<{ success: boolean }>;
 		switchToHud: () => Promise<void>;
 		startNewRecording: () => Promise<{ success: boolean; error?: string }>;
 		openSourceSelector: () => Promise<{

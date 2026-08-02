@@ -6,9 +6,9 @@ import {
 } from "./recordingDraft";
 
 describe("recording draft names", () => {
-	it("builds a stable Russian default title", () => {
+	it("builds a stable English default title", () => {
 		expect(createDefaultRecordingTitle(new Date(2026, 7, 1, 9, 5).getTime())).toBe(
-			"Запись 2026-08-01 09-05",
+			"Recording 2026-08-01 09-05",
 		);
 	});
 

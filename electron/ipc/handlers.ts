@@ -1506,7 +1506,14 @@ export function registerIpcHandlers(
 		// transparent windows and compounding the HUD shadow each cycle.
 		createEditorWindow({
 			backgroundPublish: input?.backgroundPublish === true,
+			...(typeof input?.backgroundSavePath === "string"
+				? { backgroundSavePath: input.backgroundSavePath }
+				: {}),
 			...(typeof input?.title === "string" ? { title: input.title } : {}),
+			...(input?.quality === "medium" || input?.quality === "good" || input?.quality === "source"
+				? { quality: input.quality }
+				: {}),
+			...(input?.frameRate === 30 || input?.frameRate === 60 ? { frameRate: input.frameRate } : {}),
 		});
 	});
 

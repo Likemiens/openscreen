@@ -4,8 +4,8 @@
 
 - `upstream/main` — оригинальный `getopenscreen/openscreen`;
 - `origin/main` — чистое зеркало upstream;
-- `origin/custom` — персональная версия с интеграциями;
-- `feat/*` — короткие ветки следующих функций от `custom`.
+- `origin/creator-edition` — публичная Creator Edition с интеграциями;
+- `feat/*` — короткие ветки следующих функций от `creator-edition`.
 
 Remotes уже настроены:
 
@@ -24,11 +24,11 @@ git switch main
 git merge --ff-only upstream/main
 git push origin main
 
-git switch custom
+git switch creator-edition
 git merge main
 npx tsc --noEmit
 npm run test
-git push origin custom
+git push origin creator-edition
 ```
 
 `--ff-only` намеренно останавливает процесс, если `origin/main` случайно получил персональный commit.

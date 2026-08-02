@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
 import path from "node:path";
-import { BrowserWindow, type IpcMain, Notification, safeStorage, shell } from "electron";
+import { BrowserWindow, clipboard, type IpcMain, Notification, safeStorage, shell } from "electron";
 import { buildPublishedFileName, sanitizeRecordingTitle } from "../../src/lib/recordingDraft";
 import {
 	buildYandexDiskRemotePath,
@@ -193,6 +193,24 @@ async function verifyUploadedFile(
 	throw new Error("Yandex Disk did not confirm the uploaded file size. The local copy was kept.");
 }
 
+async function publishUploadedFile(remotePath: string, accessToken: string): Promise<string> {
+	const publishUrl = new URL(`${API_BASE_URL}/resources/publish`);
+	publishUrl.searchParams.set("path", remotePath);
+	await requestYandexDisk(publishUrl, accessToken, { method: "PUT" });
+
+	for (let attempt = 0; attempt < 10; attempt += 1) {
+		const resourceUrl = new URL(`${API_BASE_URL}/resources`);
+		resourceUrl.searchParams.set("path", remotePath);
+		resourceUrl.searchParams.set("fields", "public_url");
+		const response = await requestYandexDisk(resourceUrl, accessToken);
+		const resource = (await response.json()) as { public_url?: string };
+		if (resource.public_url) return resource.public_url;
+		if (attempt < 9) await wait(Math.min(2_000, 300 * (attempt + 1)));
+	}
+
+	throw new Error("Yandex Disk uploaded the video but did not return a public link.");
+}
+
 function shouldRetry(error: unknown): boolean {
 	return (
 		error instanceof YandexDiskRequestError &&
@@ -312,7 +330,7 @@ class YandexDiskService {
 
 		const settings = await this.readSettings();
 		if (!settings.encryptedAccessToken) {
-			return { success: false, error: "Яндекс Диск не подключён." };
+			return { success: false, error: "Yandex Disk is not connected." };
 		}
 
 		const sourceExtension = path.extname(resolvedFilePath) || ".mp4";
@@ -374,6 +392,8 @@ class YandexDiskService {
 			}
 
 			await verifyUploadedFile(remotePath, accessToken, localStats.size);
+			const publicUrl = await publishUploadedFile(remotePath, accessToken);
+			clipboard.writeText(publicUrl);
 			const localDeletion = await this.handleLocalDeletions(
 				[filePath, ...cleanupSourcePaths],
 				remotePath,
@@ -383,16 +403,17 @@ class YandexDiskService {
 				state: "success",
 				fileName,
 				remotePath,
-				publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
+				publicUrl,
 				localDeletion,
 			});
 			this.notify(
-				`${fileName} опубликован`,
+				`${fileName} published`,
 				localDeletion === "deleted"
-					? "Файл проверен, локальная копия удалена. Нажмите, чтобы открыть папку."
+					? "The link was copied and the local copy was deleted. Click to open the video."
 					: localDeletion === "pending"
-						? "Файл проверен. Локальная копия удалится после выхода из редактора."
-						: "Файл проверен на Яндекс Диске. Нажмите, чтобы открыть папку.",
+						? "The link was copied. The local copy will be deleted after Studio closes."
+						: "The video link was copied. Click to open it.",
+				publicUrl,
 			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -404,7 +425,7 @@ class YandexDiskService {
 				publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
 				error: message,
 			});
-			this.notify(`Не удалось опубликовать ${fileName}`, message);
+			this.notify(`Could not publish ${fileName}`, message);
 			console.error("Yandex Disk upload failed:", message);
 		}
 	}
@@ -600,11 +621,11 @@ class YandexDiskService {
 		}
 	}
 
-	private notify(title: string, body: string): void {
+	private notify(title: string, body: string, url = YANDEX_DISK_PUBLIC_FOLDER_URL): void {
 		if (!Notification.isSupported()) return;
-		const notification = new Notification({ title: `Яндекс Диск · ${title}`, body });
+		const notification = new Notification({ title: `Yandex Disk · ${title}`, body });
 		notification.on("click", () => {
-			void shell.openExternal(YANDEX_DISK_PUBLIC_FOLDER_URL);
+			void shell.openExternal(url);
 		});
 		notification.show();
 	}

@@ -17,6 +17,7 @@ export type {
 	GifExportConfig,
 	GifFrameRate,
 	GifSizePreset,
+	Mp4FrameRate,
 	VideoFrameData,
 } from "./types";
 export {

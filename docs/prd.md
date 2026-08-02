@@ -12,15 +12,16 @@ recorder-first flow и добавляем функции только там, г
 `идея → запись → готовый файл → публикация`.
 
 После Stop приложение всегда сначала создаёт локальную запись. Пользователь задаёт название и
-выбирает один из двух явных путей:
+выбирает параметры Quality/FPS и один из трёх явных путей:
 
-1. **Опубликовать** — OpenScreen скрывается, в фоне собирает итоговый MP4 и отправляет его в
-   `disk:/OpenScreen Exports`.
-2. **Открыть редактор** — пользователь редактирует ролик и затем выбирает **Publish** или
+1. **Save Anywhere** — пользователь выбирает путь, OpenScreen скрыто собирает итоговый MP4.
+2. **Publish & Get Link** — OpenScreen скрывается, в фоне собирает итоговый MP4, отправляет его в
+   `disk:/OpenScreen Exports`, публикует отдельный файл и копирует его URL.
+3. **Edit in Studio** — пользователь редактирует ролик и затем выбирает **Publish** или
    **Save Local**.
 
 Автопубликации после Stop нет. Успех показывается только после проверки типа и размера файла на
-Яндекс Диске; уведомление содержит действие для открытия общей папки.
+Яндекс Диске; уведомление содержит действие для открытия конкретного видео.
 
 ## 2. Product principles
 
@@ -29,9 +30,9 @@ recorder-first flow и добавляем функции только там, г
 - немедленная публикация и публикация из редактора используют один MP4 export pipeline, поэтому
   webcam, cursor overlay и остальные визуальные слои не теряются;
 - сетевой сбой никогда не удаляет локальные данные;
-- персональная сборка русскоязычная и не показывает неиспользуемые Notes, language picker и
+- персональная сборка англоязычная и не показывает неиспользуемые Notes, language picker и
   vertical tray;
-- персональные изменения живут в `custom`, а `main` остаётся зеркалом upstream.
+- creator-focused изменения живут в `creator-edition`, а `main` остаётся зеркалом upstream.
 
 ## 3. Goal and metrics
 
@@ -61,7 +62,10 @@ Focus outcome: от Stop до понятного решения о судьбе 
   умолчанию;
 - toast и системное уведомление с переходом в общую папку;
 - webcam preview в HUD;
-- русский интерфейс без language picker, Notes и vertical tray.
+- HUD с timer, Stop, Restart и Delete, исключённый из screen capture;
+- английский интерфейс без language picker, Notes и vertical tray;
+- post-recording launcher с Quality (720p/1080p/Source), FPS (30/60), Save Anywhere,
+  Edit in Studio и Publish & Get Link.
 
 Non-goals:
 
@@ -69,7 +73,6 @@ Non-goals:
 - GIF-публикация (GIF можно сохранить локально);
 - очередь, переживающая перезапуск приложения;
 - несколько аккаунтов или облачных провайдеров;
-- публичная ссылка на отдельный файл — CTA открывает проверенную общую папку;
 - внешняя аналитика.
 
 ## 5. User journey and states
@@ -78,10 +81,11 @@ Non-goals:
 2. Выбирает source, при необходимости включает webcam и видит preview.
 3. Записывает и нажимает Stop.
 4. Видит подтверждение «Запись сохранена локально» и вводит название.
-5. Выбирает:
-   - **Опубликовать**: приложение скрывается; hidden editor собирает MP4; main process загружает
-     файл; системное уведомление открывает папку;
-   - **Открыть редактор**: редактирует и выбирает **Publish** или **Save Local**.
+5. Выбирает Quality/FPS и действие:
+   - **Save Anywhere**: выбирает путь; hidden editor собирает MP4; уведомление открывает файл;
+   - **Publish & Get Link**: hidden editor собирает MP4; main process загружает файл, публикует
+     отдельный resource и копирует ссылку; системное уведомление открывает видео;
+   - **Edit in Studio**: редактирует и выбирает **Publish** или **Save Local**.
 6. При ошибке export/upload локальный source остаётся доступен.
 
 Состояния: локальный draft, Yandex disconnected, background export, uploading, verified success,
@@ -112,7 +116,7 @@ auth/quota/network error, local cleanup pending/deleted.
 
 ## 8. Release and acceptance
 
-Пилот выпускается из `custom`. Перед релизом:
+Пилот выпускается из `creator-edition`. Перед релизом:
 
 - typecheck, unit tests, lint, i18n check и Windows build проходят;
 - выполнен smoke-test `record → name → editor → Save Local`;
