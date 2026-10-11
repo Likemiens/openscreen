@@ -120,7 +120,7 @@ export default function BackgroundWaveform({
 		}
 		ctx.lineTo(W, bottomY);
 		ctx.closePath();
-		ctx.fillStyle = "rgba(74, 222, 128, 0.55)";
+		ctx.fillStyle = "rgba(255, 255, 255, 0.34)";
 		ctx.fill();
 
 		// Crisp top-edge stroke.
@@ -129,7 +129,7 @@ export default function BackgroundWaveform({
 		for (let x = 1; x < W; x++) {
 			ctx.lineTo(x, colY[x]);
 		}
-		ctx.strokeStyle = "rgba(74, 222, 128, 0.85)";
+		ctx.strokeStyle = "rgba(255, 255, 255, 0.62)";
 		ctx.lineWidth = 1;
 		ctx.stroke();
 	}, [peaks, normFactor, range, canvasSize, videoDurationMs, topInset, bottomInset]);

@@ -41,23 +41,78 @@ The goal of this continuation is to keep OpenScreen alive as a fully open-source
 
 ## What Creator Edition Adds
 
-The default [`creator-edition`](https://github.com/Likemiens/openscreen/tree/creator-edition) branch keeps the upstream recorder and Studio editor intact, while streamlining the workflow for quickly recording, naming, saving, editing, and sharing videos.
+The default [`creator-edition`](https://github.com/Likemiens/openscreen/tree/creator-edition) branch keeps the upstream recorder and Studio editor intact, and puts one job in front of everything else: **record a short clip of part of the screen, have it saved, and send it to someone.**
 
-Compared with the upstream version, Creator Edition adds:
+<p align="center">
+  <img src="docs/assets/quick-clip/hud-idle.png" alt="The OpenScreen recorder: Area, Window or Screen, audio and camera toggles, quality, and Record" width="760" />
+</p>
 
-- **A capture-safe recording HUD** that remains visible while recording but is excluded from the captured video. It includes an elapsed-time counter and direct actions to stop, restart, pause when supported, or delete the current recording.
-- **A cleaner creator-focused interface** with an English-only horizontal toolbar, live webcam preview, clearer device states, and the unused Notes, language picker, and vertical tray controls removed.
-- **A post-recording launcher** that keeps the recording local first, lets you rename it, choose 720p, 1080p, or source quality and 30 or 60 FPS, then choose **Save Anywhere**, **Edit in Studio**, or **Publish & Get Link**.
-- **Yandex Disk publishing** for the final rendered MP4. OpenScreen verifies the uploaded file, publishes a file-specific link, copies it to the clipboard, and shows a system notification when the video is ready.
-- **Safe local cleanup** as an optional setting. Local files are deleted only after the remote upload has been verified; export or network failures keep the local recording intact.
-- **OpenScreen desktop branding** across the installed application, shortcuts, icons, notifications, and Windows processes.
+### Quick clips
+
+1. Press the record hotkey (or click **Record**). The area picker appears with your last area already drawn.
+2. Drag out the area, or press <kbd>Enter</kbd> to reuse the previous one.
+3. Press the hotkey again to stop. A second or two later the MP4 is in your clips folder, and a card offers **Copy link**, **Copy file**, **Show in folder**, **Edit in Studio**, or dragging the clip straight into a chat.
+
+<p align="center">
+  <img src="docs/assets/quick-clip/area-picker.png" alt="Area picker with aspect ratio and exact-size presets" width="620" />
+</p>
+<p align="center">
+  <img src="docs/assets/quick-clip/hud-clip-card.png" alt="Finished clip card above the recorder" width="700" />
+</p>
+
+- **Area, window or screen capture.** The area picker supports free, 16:9, 4:3, 1:1 and 9:16 selections, exact 720p and 1080p sizes, moving, resizing and keyboard nudging. It shows the size in real pixels, and the selection is outlined while it records (the outline never ends up in the video).
+- **Quality is chosen before you record.** 720p, 1080p or Original, at 30 or 60 fps, with an estimate of megabytes per minute. The recording is made at that frame rate, and the setting is remembered.
+- **Saved the moment you stop.** A clip that needs no crop or resize is saved as recorded, without re-encoding. Anything else gets a single hardware crop/scale pass that takes a second or two for a short clip, instead of a full render in the editor. Bitrates are tuned for screen content, so files are small enough to send.
+- **One hotkey from anywhere.** OpenScreen stays in the tray after you close the recorder. The hotkey starts a capture and stops the one in progress. It defaults to <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> where that is free; Windows 11 reserves it for the Snipping Tool, so on most PCs it becomes <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>. Change it under **⋯ → Record shortcut**.
+- **Light when idle.** A hidden recorder gives its window back after a minute; only the tray icon and the hotkey remain, and the recorder is rebuilt with your last setup when you need it. Optional **Launch at login** starts straight into the tray.
+- **Two ways out of the app, both kept.** Every clip is saved to your own folder (default `Videos\OpenScreen`, changeable). **Copy link** uploads that same file to Yandex Disk, verifies it, publishes a file-specific link and copies it. Sharing never deletes a clip from your folder.
+
+<p align="center">
+  <img src="docs/assets/quick-clip/hud-format.png" alt="Quality, frame rate, countdown and cursor options" width="560" />
+</p>
+
+### Studio recordings
+
+Turn on the camera or switch the cursor to **Editable** (window and screen captures) and the recording keeps its separate tracks for Studio instead of being saved instantly. Stop then opens the export step: **Save anywhere**, **Edit in Studio**, or **Publish & get link**, each rendering the final MP4 with your cursor and camera.
+
+### Studio: frame it, cut it, export it
+
+Studio opens on a **Frame** tab that decides how the video is presented. Below it, the timeline shows the video as one clip you can cut; **Export** is one button at the top.
+
+<p align="center">
+  <img src="docs/assets/studio/frame-phone.png" alt="Studio with the Frame tab: a recording inside a phone mockup" width="820" />
+</p>
+
+- **Device mockups at real proportions.** Put the video inside a **phone** (9:19.5), a **tablet** (11-inch iPad), a **laptop** (16:10) or a **browser window**, in graphite, silver, black or white. A device never stretches to suit the video: **Scale** sizes it as a whole, a phone or tablet can be turned **Portrait** or **Landscape**, and the video either **fills** its screen (cropped to it) or **fits** inside it. A phone can carry a Dynamic Island, punch hole, notch or no camera. Only the browser window, which has no standard size, takes the shape of the video. The preview and the exported MP4/GIF draw the same device.
+- **Aspect ratio in one click.** Auto, 16:9, 4:3, 1:1 and 9:16 sit next to the **Scale** slider.
+- **Crop by the pixel.** Type how many source pixels to take off the **Top**, **Bottom**, **Left** and **Right** — `5` means exactly five — and see the resulting size. **Adjust on video** opens the visual crop editor, which shows the same numbers.
+- **Background** is the last section of the same tab: 167 built-in wallpapers, your own image, a colour or a gradient.
+- **Bring your own video.** **Open Video** in the title bar, the folder button on the Frame tab, dropping a file onto the empty editor, or **⋯ → Edit a video file…** in the recorder all open any MP4, MOV, WebM, MKV or AVI. Studio does not need a recording made by OpenScreen.
+
+<p align="center">
+  <img src="docs/assets/studio/timeline.png" alt="The timeline: the video as one clip, split into pieces, with the middle piece removed" width="820" />
+</p>
+
+- **One clip, cut where you like.** The first row of the timeline is the video itself, shown as a strip of its frames. Put the playhead where you want a cut and press **Split** (<kbd>T</kbd>); click a piece to select it and press **Remove** (<kbd>Delete</kbd>). The removed part stays on the track, hatched, so its edges can still be dragged and **Restore** puts it back. The toolbar shows how long the video is after the cuts. Zooms, camera, annotations and speed sit in their own rows underneath.
+- **Export from one place.** **Export** (top right) asks what to render — MP4 at 720p, 1080p or the source size, or a GIF — and then where it goes: **Save to computer…**, or **Publish & copy link** to Yandex Disk. If Yandex Disk is not connected yet, the same menu connects it without leaving Studio.
+
+<p align="center">
+  <img src="docs/assets/studio/export-menu.png" alt="The Export menu: format, quality, Save to computer and Publish" width="560" />
+</p>
+
+Creator Edition also includes:
+
+- **A capture-safe recorder** that stays on screen while recording but is excluded from the video, with a timer and stop, pause, restart and delete.
+- **Recording presets** (under **⋯**) that restore microphone, camera, system audio, cursor mode, countdown, quality, frame rate and a saved source in one click.
+- **Yandex Disk publishing** with an encrypted token, verified uploads, upload progress and a system notification when the link is ready.
+- **Safe local cleanup** as an option for Studio exports: local files are removed only after the upload is verified.
+- **OpenScreen desktop branding** across the installed application, shortcuts, icons, notifications and Windows processes.
 
 > [!IMPORTANT]
 > Creator-focused changes live in `creator-edition`, while `main` stays aligned with [getopenscreen/openscreen](https://github.com/getopenscreen/openscreen). Upstream updates are synced into `main` first and then merged into `creator-edition`, keeping this distribution upgradeable without mixing its features into the upstream mirror.
 
-<p align="center">
-  <img src="docs/design-qa-assets/hud-recording-polished.png" alt="OpenScreen Creator Edition recording toolbar" width="900" />
-</p>
+> [!NOTE]
+> Quick clips use the native recorder on Windows and macOS. Area clips always record the system cursor into the video and cannot include the camera; use a window or screen capture for those. On Linux, closing the last window still quits the app, because tray support varies between desktops.
 
 <p align="center">
 	<img src="public/demo.png" alt="" style="height: 320px; margin-right: 12px;" />
@@ -65,7 +120,7 @@ Compared with the upstream version, Creator Edition adds:
 </p>
 
 ## Core Features
-- Record a specific window, or your whole screen.
+- Record a selected area, a specific window, or your whole screen.
 - Record microphone and system audio.
 - Webcam overlay with picture-in-picture, drag-to-position, mirroring, and shape options.
 - Auto or manual zooms with adjustable depth, duration, easing, and pixel-precise position; auto-zoom follows your cursor as you work.
@@ -73,7 +128,10 @@ Compared with the upstream version, Creator Edition adds:
 - Automatic captions for voiceovers, generated on-device with no upload (works offline).
 - Wallpapers, solid colors, gradients, or your own background image.
 - Motion blur.
-- Crop, trim, and per-segment speed control on the timeline.
+- Crop (visually or by exact source pixels), trim, and per-segment speed control on the timeline.
+- Device mockups at real proportions — phone, tablet, laptop, browser window — and one-click aspect ratios.
+- A clip track you can split into pieces and cut parts out of.
+- Open any video file in the editor, not only OpenScreen recordings.
 - Text, arrow, and image annotations, with text animation presets.
 - Timeline snapping guides and an audio waveform to make trimming easier.
 - Customizable keyboard shortcuts.
@@ -173,6 +231,23 @@ Everything in the editor and export is the same on macOS, Windows, and Linux: zo
   - **Windows**: works out of the box.
   - **Linux**: needs PipeWire (default on Ubuntu 22.04+, Fedora 34+). Older PulseAudio-only setups may not capture system audio (mic should still work).
 
+## Building Creator Edition
+
+```bash
+npm install
+npm run dev          # recorder + Studio with hot reload
+npm run test         # unit tests
+npm run build:win    # Windows installer in release/<version>/
+```
+
+`npm run build:win` first compiles the native Windows capture helper, which needs Visual Studio Build Tools with the C++ workload. If the prebuilt helpers are already in `electron/native/bin/win32-x64/`, the installer can be packaged without that toolchain:
+
+```bash
+npx tsc && npx vite build && npx electron-builder --win --config.npmRebuild=false
+```
+
+`npx playwright test tests/e2e/quick-clip.spec.ts` drives the real app on Windows: it selects an area, records a few seconds of the screen, and checks the saved clip. Run `npm run build-vite` first.
+
 ## Official links
 
 This repository is the community-maintained continuation of OpenScreen.
@@ -197,3 +272,5 @@ OpenScreen is community-driven. If you need help, want to report a bug, or just 
 ## License
 
 This project is licensed under the [MIT License](./LICENSE). By using this software, you agree that the authors are not liable for any issues, damages, or claims arising from its use.
+
+Wallpapers 19–167 in `public/wallpapers` come from the [Super Visuals — Backgrounds Library](https://www.figma.com/design/rd1wo2a08HDyumdphnNiqC/Super-Visuals--Backgrounds-Library) on Figma and remain under that library's own terms, not the MIT License.

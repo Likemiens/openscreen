@@ -19,9 +19,29 @@ const ASSET_BASE_URL_ARG = `--asset-base-url=${pathToFileURL(`${ASSET_BASE_DIR}$
 
 let hudOverlayWindow: BrowserWindow | null = null;
 
+// Where the user last left the HUD (bottom-centre anchor, matching the anchor the
+// renderer-driven resize preserves). The HUD window is released while the app idles
+// in the tray, so this lets it reappear where it was instead of jumping home.
+let lastHudAnchor: { centerX: number; bottomY: number } | null = null;
+
+function rememberHudAnchor(win: BrowserWindow) {
+	if (win.isDestroyed()) return;
+	const bounds = win.getBounds();
+	lastHudAnchor = {
+		centerX: bounds.x + bounds.width / 2,
+		bottomY: bounds.y + bounds.height,
+	};
+}
+
+/** The HUD overlay, if one currently exists. */
+export function getHudOverlayWindow(): BrowserWindow | null {
+	return hudOverlayWindow && !hudOverlayWindow.isDestroyed() ? hudOverlayWindow : null;
+}
+
 ipcMain.on("hud-overlay-hide", () => {
 	if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
-		hudOverlayWindow.minimize();
+		rememberHudAnchor(hudOverlayWindow);
+		hudOverlayWindow.hide();
 	}
 });
 
@@ -43,6 +63,7 @@ ipcMain.on("hud-overlay-move-by", (_event, deltaX: number, deltaY: number) => {
 
 	const [x, y] = hudOverlayWindow.getPosition();
 	hudOverlayWindow.setPosition(Math.round(x + deltaX), Math.round(y + deltaY), false);
+	rememberHudAnchor(hudOverlayWindow);
 });
 
 // Resize the HUD to fit its rendered content. Anchored by its bottom-centre so it
@@ -92,8 +113,26 @@ export function createHudOverlayWindow(options: { startHidden?: boolean } = {}):
 	const windowWidth = 600;
 	const windowHeight = 160;
 
-	const x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2);
-	const y = Math.floor(workArea.y + workArea.height - windowHeight - 5);
+	let x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2);
+	let y = Math.floor(workArea.y + workArea.height - windowHeight - 5);
+
+	// Reuse the last position only while it is still on a connected display.
+	if (lastHudAnchor) {
+		const anchorDisplay = screen.getDisplayNearestPoint({
+			x: Math.round(lastHudAnchor.centerX),
+			y: Math.round(lastHudAnchor.bottomY),
+		});
+		const area = anchorDisplay.workArea;
+		const insideDisplay =
+			lastHudAnchor.centerX >= area.x &&
+			lastHudAnchor.centerX <= area.x + area.width &&
+			lastHudAnchor.bottomY > area.y &&
+			lastHudAnchor.bottomY <= area.y + area.height + 8;
+		if (insideDisplay) {
+			x = Math.round(lastHudAnchor.centerX - windowWidth / 2);
+			y = Math.round(lastHudAnchor.bottomY - windowHeight);
+		}
+	}
 
 	const win = new BrowserWindow({
 		width: windowWidth,
@@ -150,6 +189,7 @@ export function createHudOverlayWindow(options: { startHidden?: boolean } = {}):
 
 	hudOverlayWindow = win;
 
+	win.on("close", () => rememberHudAnchor(win));
 	win.on("closed", () => {
 		if (hudOverlayWindow === win) {
 			hudOverlayWindow = null;
@@ -188,7 +228,7 @@ export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWi
 		alwaysOnTop: false,
 		skipTaskbar: false,
 		title: "OpenScreen",
-		backgroundColor: "#09090b",
+		backgroundColor: "#161618",
 		show: false, // shown via ready-to-show to avoid white flash on first load
 		webPreferences: {
 			preload: path.join(__dirname, "preload.mjs"),
@@ -200,7 +240,9 @@ export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWi
 		},
 	});
 
-	win.maximize();
+	// maximize() also shows the window, which a headless run (tests, background checks)
+	// must not do: it would put the editor over whatever the user is working in.
+	if (!HEADLESS) win.maximize();
 
 	// The editor renders its own File/Edit/View menu bar in the custom titlebar,
 	// so hide the native OS menu bar on Windows/Linux (it stays reachable via Alt).
@@ -217,7 +259,7 @@ export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWi
 	// Inject dark background before any React paint so the sub-titlebar area never
 	// flashes white on a cold Vite load.
 	win.webContents.on("dom-ready", () => {
-		win.webContents.insertCSS("html, body, #root { background: #09090b !important; }").catch(() => {
+		win.webContents.insertCSS("html, body, #root { background: #161618 !important; }").catch(() => {
 			// Best-effort cosmetic; ignore if the page is mid-teardown.
 		});
 	});
@@ -251,7 +293,7 @@ export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWi
  * Floating source-selector window for picking a screen or window to record.
  * Frameless, transparent, and follows the user across macOS Spaces.
  */
-export function createSourceSelectorWindow(): BrowserWindow {
+export function createSourceSelectorWindow(tab?: "screens" | "windows"): BrowserWindow {
 	const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
 	const win = new BrowserWindow({
@@ -280,14 +322,123 @@ export function createSourceSelectorWindow(): BrowserWindow {
 		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 	}
 
+	const query: Record<string, string> = {
+		windowType: "source-selector",
+		...(tab ? { tab } : {}),
+	};
 	if (VITE_DEV_SERVER_URL) {
-		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=source-selector");
+		win.loadURL(`${VITE_DEV_SERVER_URL}?${new URLSearchParams(query).toString()}`);
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
-			query: { windowType: "source-selector" },
-		});
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), { query });
 	}
 
+	return win;
+}
+
+function loadOverlayRoute(win: BrowserWindow, windowType: string) {
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(`${VITE_DEV_SERVER_URL}?windowType=${windowType}`);
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), { query: { windowType } });
+	}
+}
+
+/**
+ * Full-display transparent overlay for dragging out the area to record. Covers the
+ * whole display (taskbar included) so any part of the screen can be selected.
+ */
+export function createRegionSelectorWindow(display: Electron.Display): BrowserWindow {
+	const win = new BrowserWindow({
+		...display.bounds,
+		frame: false,
+		transparent: true,
+		backgroundColor: "#00000000",
+		resizable: false,
+		movable: false,
+		minimizable: false,
+		maximizable: false,
+		fullscreenable: false,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		hasShadow: false,
+		roundedCorners: false,
+		enableLargerThanScreen: true,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
+
+	// Above the taskbar and other always-on-top windows, the HUD included.
+	win.setAlwaysOnTop(true, "screen-saver");
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	}
+
+	win.once("ready-to-show", () => {
+		if (HEADLESS || win.isDestroyed()) return;
+		// Some window managers adjust the first bounds of a frameless window.
+		win.setBounds(display.bounds);
+		win.show();
+		win.focus();
+	});
+
+	loadOverlayRoute(win, "region-selector");
+	return win;
+}
+
+/** Thickness (DIP) of the margin the recording frame window adds around a region. */
+export const REGION_FRAME_MARGIN = 6;
+
+/**
+ * Click-through outline around the area being recorded. Excluded from capture, and
+ * drawn just outside the region so it never lands in the video either way.
+ */
+export function createRegionFrameWindow(regionBounds: Electron.Rectangle): BrowserWindow {
+	const win = new BrowserWindow({
+		x: regionBounds.x - REGION_FRAME_MARGIN,
+		y: regionBounds.y - REGION_FRAME_MARGIN,
+		width: regionBounds.width + REGION_FRAME_MARGIN * 2,
+		height: regionBounds.height + REGION_FRAME_MARGIN * 2,
+		frame: false,
+		transparent: true,
+		backgroundColor: "#00000000",
+		resizable: false,
+		movable: false,
+		focusable: false,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		hasShadow: false,
+		roundedCorners: false,
+		enableLargerThanScreen: true,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
+
+	if (process.env["OPENSCREEN_ALLOW_HUD_CAPTURE"] !== "true") {
+		win.setContentProtection(true);
+	}
+	win.setIgnoreMouseEvents(true);
+	win.setAlwaysOnTop(true, "screen-saver");
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	}
+
+	win.once("ready-to-show", () => {
+		if (!HEADLESS && !win.isDestroyed()) win.showInactive();
+	});
+
+	loadOverlayRoute(win, "region-frame");
 	return win;
 }
 

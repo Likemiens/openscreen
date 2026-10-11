@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { globalShortcut } from "electron";
+import { normalizeAccelerator, QUICK_RECORD_SHORTCUT_CANDIDATES } from "../src/lib/appSettings";
 import { type ShortcutBinding } from "../src/lib/shortcuts";
 import { SHORTCUTS_FILE } from "./ipc/handlers";
 
@@ -72,6 +73,74 @@ export async function loadAndRegisterGlobalShortcut(onTrigger: () => void): Prom
 	}
 }
 
+let quickRecordAccelerator: string | null = null;
+
+/** The open-app shortcut in the same canonical form the record shortcut uses. */
+function getOpenAppAccelerator(): string | null {
+	return currentAccelerator ? normalizeAccelerator(currentAccelerator) : null;
+}
+
+function tryRegister(accelerator: string, onTrigger: () => void): boolean {
+	try {
+		return globalShortcut.register(accelerator, onTrigger);
+	} catch (error) {
+		console.warn(`Invalid global shortcut ${accelerator}:`, error);
+		return false;
+	}
+}
+
+/**
+ * Registers the record hotkey. The OS or another app may already own a
+ * combination, so `preferred` is followed by the built-in fallbacks and the
+ * first one that registers is returned (`null` if none did).
+ */
+export function registerQuickRecordShortcut(
+	preferred: string | null,
+	onTrigger: () => void,
+): string | null {
+	const candidates = [
+		...new Set(
+			[preferred, ...QUICK_RECORD_SHORTCUT_CANDIDATES].filter(
+				(candidate): candidate is string =>
+					Boolean(candidate) && candidate !== getOpenAppAccelerator(),
+			),
+		),
+	];
+
+	if (quickRecordAccelerator) {
+		globalShortcut.unregister(quickRecordAccelerator);
+		quickRecordAccelerator = null;
+	}
+
+	for (const accelerator of candidates) {
+		if (tryRegister(accelerator, onTrigger)) {
+			quickRecordAccelerator = accelerator;
+			console.log(`Record shortcut registered: ${accelerator}`);
+			return accelerator;
+		}
+	}
+
+	console.warn("Failed to register a record shortcut; every candidate is taken.");
+	return null;
+}
+
+/** Releases the record hotkey, e.g. while the user is choosing a new one. */
+export function suspendQuickRecordShortcut(): void {
+	if (!quickRecordAccelerator) return;
+	globalShortcut.unregister(quickRecordAccelerator);
+	quickRecordAccelerator = null;
+}
+
+/** True when `accelerator` is free to register (or is already ours). */
+export function isAcceleratorAvailable(accelerator: string): boolean {
+	if (accelerator === quickRecordAccelerator) return true;
+	if (accelerator === getOpenAppAccelerator()) return false;
+	if (!tryRegister(accelerator, () => undefined)) return false;
+	globalShortcut.unregister(accelerator);
+	return true;
+}
+
 export function unregisterAllGlobalShortcuts(): void {
 	globalShortcut.unregisterAll();
+	quickRecordAccelerator = null;
 }

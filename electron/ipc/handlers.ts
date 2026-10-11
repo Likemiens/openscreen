@@ -364,6 +364,45 @@ let currentRecordingSession: RecordingSession | null = null;
 export function getSelectedDesktopSource(): DesktopCapturerSource | null {
 	return selectedDesktopSource;
 }
+
+/**
+ * Selects the screen source of one display without going through the picker window.
+ * Area capture and the single-display "Screen" mode both record a whole display.
+ * Returns the selected source, or `null` when the display could not be matched.
+ */
+export async function selectScreenSourceForDisplay(
+	displayId: number,
+): Promise<SelectedSource | null> {
+	const sources = await desktopCapturer.getSources({
+		types: ["screen"],
+		thumbnailSize: { width: 0, height: 0 },
+	});
+	if (sources.length === 0) return null;
+
+	// Some platforms report an empty display_id; fall back to enumeration order there.
+	const displays = screen.getAllDisplays();
+	const displayIndex = displays.findIndex((display) => display.id === displayId);
+	const match =
+		sources.find((source) => Number(source.display_id) === displayId && source.display_id !== "") ??
+		(sources.length === 1 ? sources[0] : (sources[displayIndex] ?? null));
+	if (!match) return null;
+
+	for (const source of sources) lastEnumeratedSources.set(source.id, source);
+	selectedDesktopSource = match;
+	selectedSource = {
+		id: match.id,
+		name: match.name,
+		display_id: match.display_id || String(displayId),
+		thumbnail: null,
+		appIcon: null,
+	};
+	return selectedSource;
+}
+
+/** Lets the editor read a clip OpenScreen saved outside its recordings folder. */
+export function approveVideoPathForEditor(filePath: string): void {
+	approveFilePath(filePath);
+}
 let currentVideoPath: string | null = null;
 
 function normalizePath(filePath: string) {
@@ -1299,7 +1338,7 @@ async function loadRecordedSessionForVideoPath(
 
 export function registerIpcHandlers(
 	createEditorWindow: (options?: EditorLaunchOptions) => void,
-	createSourceSelectorWindow: () => BrowserWindow,
+	createSourceSelectorWindow: (tab?: "screens" | "windows") => BrowserWindow,
 	createCountdownOverlayWindow: () => BrowserWindow,
 	getMainWindow: () => BrowserWindow | null,
 	getSourceSelectorWindow: () => BrowserWindow | null,
@@ -1460,7 +1499,7 @@ export function registerIpcHandlers(
 		return access;
 	});
 
-	ipcMain.handle("open-source-selector", async () => {
+	ipcMain.handle("open-source-selector", async (_, tab?: "screens" | "windows") => {
 		const access = await requestScreenAccess();
 		if (!access.granted) {
 			if (process.platform === "darwin" && access.status !== "not-determined") {
@@ -1496,7 +1535,7 @@ export function registerIpcHandlers(
 			sourceSelectorWin.focus();
 			return { opened: true };
 		}
-		createSourceSelectorWindow();
+		createSourceSelectorWindow(tab === "screens" || tab === "windows" ? tab : undefined);
 		return { opened: true };
 	});
 
@@ -2487,7 +2526,18 @@ export function registerIpcHandlers(
 	ipcMain.handle("get-managed-export-path", (_, fileName: string) => {
 		const extension = path.extname(fileName).toLowerCase() === ".gif" ? ".gif" : ".mp4";
 		const safeFileName = buildPublishedFileName(path.parse(fileName).name, extension);
-		const outputPath = path.join(RECORDINGS_DIR, safeFileName);
+		let outputPath = path.join(RECORDINGS_DIR, safeFileName);
+		// A video opened from the recordings folder can share its title with the export.
+		// Writing the render over the file being edited would destroy the source.
+		const sameFile = (candidate?: string | null) =>
+			Boolean(candidate) &&
+			path.resolve(candidate as string).toLowerCase() === path.resolve(outputPath).toLowerCase();
+		if (sameFile(currentVideoPath) || sameFile(currentRecordingSession?.webcamVideoPath)) {
+			outputPath = path.join(
+				RECORDINGS_DIR,
+				buildPublishedFileName(`${path.parse(safeFileName).name} (export)`, extension),
+			);
+		}
 		approveFilePath(outputPath);
 		return { success: true, path: outputPath };
 	});
@@ -2566,6 +2616,23 @@ export function registerIpcHandlers(
 				message: "Failed to open file picker",
 				error: String(error),
 			};
+		}
+	});
+
+	// A video the user dropped onto the editor. Dropping a file is as explicit a choice
+	// as picking it in the dialog, so it is approved the same way: it must exist and be
+	// a video file.
+	ipcMain.handle("open-video-file-from-path", async (_, filePath: string) => {
+		try {
+			const normalizedPath =
+				typeof filePath === "string" ? await approveReadableVideoPath(filePath) : null;
+			if (!normalizedPath) {
+				return { success: false, message: "Not a supported readable video file" };
+			}
+			currentProjectPath = null;
+			return { success: true, path: normalizedPath };
+		} catch (error) {
+			return { success: false, message: "Failed to open video", error: String(error) };
 		}
 	});
 

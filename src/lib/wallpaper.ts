@@ -1,6 +1,6 @@
 import { getAssetPath } from "@/lib/assetPath";
 
-export const WALLPAPER_COUNT = 18;
+export const WALLPAPER_COUNT = 167;
 
 export const WALLPAPER_PATHS: readonly string[] = Array.from(
 	{ length: WALLPAPER_COUNT },
@@ -8,6 +8,14 @@ export const WALLPAPER_PATHS: readonly string[] = Array.from(
 );
 
 export const DEFAULT_WALLPAPER = WALLPAPER_PATHS[0];
+
+/**
+ * The small copy of a bundled wallpaper that the picker shows. With this many
+ * wallpapers the full-size files are only decoded for the one that is in use.
+ */
+export function getWallpaperThumbnailPath(wallpaperPath: string): string {
+	return wallpaperPath.replace("/wallpapers/", "/wallpapers/thumbs/");
+}
 
 export type WallpaperClassification =
 	| { kind: "color"; value: string }

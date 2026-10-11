@@ -46,7 +46,6 @@ import {
 } from "@/components/video-editor/videoPlayback/zoomTransform";
 import {
 	computeCameraFullscreenTargetRect,
-	computeCompositeLayout,
 	getWebcamLayoutPresetDefinition,
 	lerpRect,
 	reactiveWebcamScale,
@@ -64,6 +63,12 @@ import {
 	resolveInterpolatedNativeCursorFrame,
 	resolveNativeCursorRenderAsset,
 } from "@/lib/cursor/nativeCursor";
+import {
+	computeFramedCompositeLayout,
+	type DeviceFrameSettings,
+	paintDeviceShapes,
+} from "@/lib/deviceFrame";
+import { destroyPixiApp } from "@/lib/pixiDestroy";
 import { BackgroundLoadError, classifyWallpaper, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { drawCanvasClipPath } from "@/lib/webcamMaskShapes";
 import type { CursorRecordingData } from "@/native/contracts";
@@ -89,6 +94,8 @@ interface FrameRenderConfig {
 	motionBlurAmount?: number;
 	borderRadius?: number;
 	padding?: number;
+	/** Device mockup drawn around the video, identical to the preview's. */
+	deviceFrame?: DeviceFrameSettings | null;
 	cropRegion: CropRegion;
 	cursorRecordingData?: CursorRecordingData | null;
 	cursorScale?: number;
@@ -146,6 +153,8 @@ export class FrameRenderer {
 	private videoSprite: Sprite | null = null;
 	private backgroundSprite: HTMLCanvasElement | null = null;
 	private maskGraphics: Graphics | null = null;
+	private deviceBackGraphics: Graphics | null = null;
+	private deviceFrontGraphics: Graphics | null = null;
 	private blurFilter: BlurFilter | null = null;
 	private motionBlurFilter: MotionBlurFilter | null = null;
 	private shadowCanvas: HTMLCanvasElement | null = null;
@@ -214,8 +223,13 @@ export class FrameRenderer {
 
 		this.cameraContainer = new Container();
 		this.videoContainer = new Container();
+		this.deviceBackGraphics = new Graphics();
+		this.deviceFrontGraphics = new Graphics();
 		this.app.stage.addChild(this.cameraContainer);
+		// Frame body behind the video, camera cutout in front of it.
+		this.cameraContainer.addChild(this.deviceBackGraphics);
 		this.cameraContainer.addChild(this.videoContainer);
+		this.cameraContainer.addChild(this.deviceFrontGraphics);
 
 		// Background renders separately, not in PixiJS
 		await this.setupBackground();
@@ -609,13 +623,11 @@ export class FrameRenderer {
 				getNativeCursorClickBounceProgress(this.config.cursorRecordingData, timeMs),
 			);
 		const appliedScale = this.animationState.appliedScale;
-		// Normalize cursor size to croppedRect.width (the painted video width).
-		// The preview path still uses screenRect.width; they agree in cover mode but
-		// differ in fit-to-height letterbox — known asymmetry pending the preview-path
-		// follow-up to project the cursor onto the cropped sub-rect as well.
+		// Normalize cursor size to croppedRect.width (the painted video width), as the
+		// preview does: the mask is narrower than the picture when it covers a screen.
 		const sizeNorm =
 			this.layoutCache.videoSize.width > 0
-				? this.layoutCache.maskRect.width / this.layoutCache.videoSize.width
+				? this.layoutCache.croppedRect.width / this.layoutCache.videoSize.width
 				: 1;
 		const canvasX = projectedPoint.x * appliedScale + this.animationState.x;
 		const canvasY = projectedPoint.y * appliedScale + this.animationState.y;
@@ -625,8 +637,16 @@ export class FrameRenderer {
 			state: this.nativeCursorMotionBlurState,
 			timeMs,
 		});
-		// Clip only when explicitly enabled; by default the cursor may overflow the canvas
-		const cursorClip = this.config.cursorClipToBounds === true ? this.cameraAwareMaskRect() : null;
+		// Clip when asked to; by default the cursor may overflow the video. A picture that
+		// covers a screen (a device in Fill, a stacked camera layout) is larger than what is
+		// shown, so there the cursor is always clipped, as in the preview.
+		const { croppedRect, maskRect } = this.layoutCache;
+		const pictureOverflowsMask =
+			croppedRect.width > maskRect.width + 1 || croppedRect.height > maskRect.height + 1;
+		const cursorClip =
+			this.config.cursorClipToBounds === true || pictureOverflowsMask
+				? this.cameraAwareMaskRect()
+				: null;
 		this.foregroundCtx.save();
 		this.foregroundCtx.beginPath();
 		if (cursorClip) {
@@ -701,17 +721,26 @@ export class FrameRenderer {
 		const paddingScale = 1.0 - (effectivePadding / 100) * 0.4;
 		const viewportWidth = width * paddingScale;
 		const viewportHeight = height * paddingScale;
-		const compositeLayout = computeCompositeLayout({
+		const compositeLayout = computeFramedCompositeLayout({
 			canvasSize: { width, height },
 			maxContentSize: { width: viewportWidth, height: viewportHeight },
 			screenSize: { width: croppedVideoWidth, height: croppedVideoHeight },
 			webcamSize: webcamFrame ? this.config.webcamSize : null,
+			webcamPresent: Boolean(this.config.webcamSize),
 			layoutPreset: this.config.webcamLayoutPreset,
 			webcamSizePreset: this.config.webcamSizePreset,
 			webcamPosition: this.config.webcamPosition,
 			webcamMaskShape: this.config.webcamMaskShape,
+			deviceFrame: this.config.deviceFrame,
 		});
 		if (!compositeLayout) return;
+
+		if (this.deviceBackGraphics) {
+			paintDeviceShapes(this.deviceBackGraphics, compositeLayout.deviceFrame?.back);
+		}
+		if (this.deviceFrontGraphics) {
+			paintDeviceShapes(this.deviceFrontGraphics, compositeLayout.deviceFrame?.front);
+		}
 
 		const screenRect = compositeLayout.screenRect;
 
@@ -747,12 +776,15 @@ export class FrameRenderer {
 		const previewWidth = this.config.previewWidth ?? this.config.width;
 		const previewHeight = this.config.previewHeight ?? this.config.height;
 		const canvasScaleFactor = Math.min(width / previewWidth, height / previewHeight);
+		// A device frame dictates the corner radius: the video has to follow its screen.
 		const scaledBorderRadius =
-			compositeLayout.screenBorderRadius != null
-				? compositeLayout.screenBorderRadius
-				: compositeLayout.screenCover
-					? 0
-					: borderRadius * canvasScaleFactor;
+			compositeLayout.videoRadius != null
+				? compositeLayout.videoRadius
+				: compositeLayout.screenBorderRadius != null
+					? compositeLayout.screenBorderRadius
+					: compositeLayout.screenCover
+						? 0
+						: borderRadius * canvasScaleFactor;
 
 		this.maskGraphics.clear();
 		this.maskGraphics.roundRect(0, 0, screenRect.width, screenRect.height, scaledBorderRadius);
@@ -782,6 +814,18 @@ export class FrameRenderer {
 		};
 	}
 
+	/** The whole recording as fractions of the stage, for cursor-follow zooms. */
+	private cursorFrame() {
+		const layout = this.layoutCache;
+		if (!layout || layout.stageSize.width <= 0 || layout.stageSize.height <= 0) return undefined;
+		return {
+			x: layout.baseOffset.x / layout.stageSize.width,
+			y: layout.baseOffset.y / layout.stageSize.height,
+			width: (this.config.videoWidth * layout.baseScale) / layout.stageSize.width,
+			height: (this.config.videoHeight * layout.baseScale) / layout.stageSize.height,
+		};
+	}
+
 	private updateAnimationState(timeMs: number): number {
 		if (!this.cameraContainer || !this.layoutCache) return 0;
 
@@ -793,7 +837,11 @@ export class FrameRenderer {
 		const { region, strength, blendedScale, rotation3D, transition } = findDominantRegion(
 			this.config.zoomRegions,
 			timeMs,
-			{ connectZooms: true, cursorTelemetry: this.config.cursorTelemetry },
+			{
+				connectZooms: true,
+				cursorTelemetry: this.config.cursorTelemetry,
+				cursorFrame: this.cursorFrame(),
+			},
 		);
 
 		const defaultFocus = DEFAULT_FOCUS;
@@ -1155,16 +1203,14 @@ export class FrameRenderer {
 		}
 		this.backgroundSprite = null;
 		if (this.app) {
-			this.app.destroy(true, {
-				children: true,
-				texture: true,
-				textureSource: true,
-			});
+			destroyPixiApp(this.app);
 			this.app = null;
 		}
 		this.cameraContainer = null;
 		this.videoContainer = null;
 		this.maskGraphics = null;
+		this.deviceBackGraphics = null;
+		this.deviceFrontGraphics = null;
 		this.blurFilter = null;
 		this.motionBlurFilter = null;
 		this.shadowCanvas = null;

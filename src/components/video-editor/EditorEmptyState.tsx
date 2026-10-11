@@ -5,15 +5,24 @@ import { useScopedT } from "@/contexts/I18nContext";
 import { getProjectFolder, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
 
+// The same containers the file picker offers.
+const VIDEO_FILE_RE = /\.(mp4|mov|webm|mkv|m4v|avi|wmv|flv|ts)$/i;
+
 interface EditorEmptyStateProps {
 	onVideoImported: (videoPath: string) => void;
+	/** Called with the path of a video file dropped onto the empty editor. */
+	onVideoDropped?: (videoPath: string) => void;
 	/** Called with the loaded project data; handles both button click and drag-drop */
 	onProjectOpened: (project: unknown, path: string | null) => void;
 }
 
 type DropError = "unsupported-format" | "load-failed" | null;
 
-export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmptyStateProps) {
+export function EditorEmptyState({
+	onVideoImported,
+	onVideoDropped,
+	onProjectOpened,
+}: EditorEmptyStateProps) {
 	const te = useScopedT("editor");
 	const tc = useScopedT("common");
 	const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -70,7 +79,22 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 
 			const projectFile = files.find((f) => f.name.endsWith(".openscreen"));
 			if (!projectFile) {
-				setDropError("unsupported-format");
+				const videoFile = onVideoDropped
+					? files.find((file) => VIDEO_FILE_RE.test(file.name))
+					: undefined;
+				if (!videoFile || !onVideoDropped) {
+					setDropError("unsupported-format");
+					return;
+				}
+				try {
+					const approved = await window.electronAPI.openVideoFileFromPath(
+						window.electronAPI.getPathForFile(videoFile),
+					);
+					if (!approved.success || !approved.path) throw new Error("not readable");
+					onVideoDropped(approved.path);
+				} catch {
+					setDropError("load-failed");
+				}
 				return;
 			}
 
@@ -101,27 +125,27 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 
 			onProjectOpened(result.project, result.path ?? null);
 		},
-		[onProjectOpened],
+		[onProjectOpened, onVideoDropped],
 	);
 
 	return (
 		<div
-			className="flex h-full w-full flex-col items-center justify-center bg-[#09090b]"
+			className="flex h-full w-full flex-col items-center justify-center bg-[#161618]"
 			onDragOver={handleDragOver}
 			onDragLeave={handleDragLeave}
 			onDrop={handleDrop}
 		>
 			{/* Drop overlay */}
 			{isDraggingOver && (
-				<div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#34B27B] bg-[#34B27B]/10">
-					<Upload className="mb-3 h-10 w-10 text-[#34B27B]" />
-					<p className="text-base font-semibold text-[#34B27B]">{te("emptyState.dropOverlay")}</p>
+				<div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#0A84FF] bg-[#0A84FF]/10">
+					<Upload className="mb-3 h-10 w-10 text-[#0A84FF]" />
+					<p className="text-base font-semibold text-[#0A84FF]">{te("emptyState.dropOverlay")}</p>
 				</div>
 			)}
 
 			{/* Drop error dialog */}
 			<Dialog open={dropError !== null} onOpenChange={(open) => !open && setDropError(null)}>
-				<DialogContent className="bg-[#09090b] border-white/10 rounded-2xl max-w-sm p-6 gap-0">
+				<DialogContent className="bg-[#161618] border-white/10 rounded-2xl max-w-sm p-6 gap-0">
 					<DialogHeader className="mb-4">
 						<div className="flex items-center gap-3">
 							<img
@@ -152,7 +176,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={() => setDropError(null)}
-						className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#161618]"
 					>
 						<X className="w-4 h-4" />
 						{tc("actions.close")}
@@ -181,7 +205,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={handleImportVideo}
-						className="flex items-center justify-center gap-2.5 w-full px-4 py-3 rounded-xl bg-[#34B27B] hover:bg-[#2d9e6c] active:bg-[#27885c] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#34B27B] focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex items-center justify-center gap-2.5 w-full px-4 py-3 rounded-xl bg-[#0A84FF] hover:bg-[#0077ED] active:bg-[#0068D1] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#0A84FF] focus-visible:ring-offset-2 focus-visible:ring-offset-[#161618]"
 					>
 						<Film className="h-4 w-4" />
 						{te("emptyState.importVideoButton")}
@@ -189,7 +213,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={handleLoadProject}
-						className="flex items-center justify-center gap-2.5 w-full px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex items-center justify-center gap-2.5 w-full px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#161618]"
 					>
 						<FolderOpen className="h-4 w-4" />
 						{te("emptyState.loadProjectButton")}

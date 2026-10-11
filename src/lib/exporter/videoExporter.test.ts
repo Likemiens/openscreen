@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_DEVICE_FRAME } from "@/lib/deviceFrame";
 import {
 	getSourceCopyFastPathBlockers,
 	isSourceCopyFastPathEligible,
@@ -141,6 +142,27 @@ describe("getSourceCopyFastPathBlockers", () => {
 				audioStreamCount: 2,
 			}),
 		).toContain("source has multiple audio tracks (must be mixed)");
+	});
+
+	// A copy would hand back the bare recording, without the mockup drawn around it.
+	it("blocks the copy path when a device frame has to be rendered", () => {
+		const source = { width: 1920, height: 1080 };
+		expect(
+			getSourceCopyFastPathBlockers(
+				createConfig({
+					deviceFrame: { ...DEFAULT_DEVICE_FRAME, kind: "phone" },
+				}),
+				source,
+			),
+		).toContain("device frame is enabled");
+		expect(
+			getSourceCopyFastPathBlockers(
+				createConfig({
+					deviceFrame: DEFAULT_DEVICE_FRAME,
+				}),
+				source,
+			),
+		).not.toContain("device frame is enabled");
 	});
 
 	it("does not report the audio-track blocker for a single-track source", () => {

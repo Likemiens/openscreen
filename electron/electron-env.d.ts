@@ -34,7 +34,7 @@ interface Window {
 		finishBackgroundPublish: (error?: string, savedPath?: string) => Promise<{ success: boolean }>;
 		switchToHud: () => Promise<void>;
 		startNewRecording: () => Promise<{ success: boolean; error?: string }>;
-		openSourceSelector: () => Promise<{
+		openSourceSelector: (tab?: "screens" | "windows") => Promise<{
 			opened: boolean;
 			reason?: string;
 			access?: {
@@ -213,6 +213,10 @@ interface Window {
 			error?: string;
 		}>;
 		openVideoFilePicker: () => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
+		/** Approves a video the user dropped onto the editor so it can be opened. */
+		openVideoFileFromPath: (
+			filePath: string,
+		) => Promise<{ success: boolean; path?: string; message?: string }>;
 		setCurrentVideoPath: (path: string) => Promise<{ success: boolean }>;
 		setCurrentRecordingSession: (
 			session: import("../src/lib/recordingSession").RecordingSession | null,
@@ -314,6 +318,70 @@ interface Window {
 		}) => Promise<{ success: boolean }>;
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;
+		showHudOverlay: () => void;
+		/** Tells the main process not to release the hidden HUD while work is in flight. */
+		setHudBusy: (busy: boolean) => void;
+		consumePendingHudCommand: () => Promise<
+			import("../src/lib/quickCaptureContracts").HudCommand | null
+		>;
+		onHudCommand: (
+			callback: (command: import("../src/lib/quickCaptureContracts").HudCommand) => void,
+		) => () => void;
+		getAppSettings: () => Promise<import("../src/lib/appSettings").AppSettingsView>;
+		updateAppSettings: (
+			patch: Partial<import("../src/lib/appSettings").AppSettings>,
+		) => Promise<import("../src/lib/quickCaptureContracts").AppSettingsResult>;
+		/** Releases the record hotkey while a new one is being typed, then restores it. */
+		setShortcutCaptureActive: (active: boolean) => void;
+		pickSaveFolder: () => Promise<import("../src/lib/quickCaptureContracts").AppSettingsResult>;
+		openSaveFolder: () => Promise<{ success: boolean; error?: string }>;
+		openRegionSelector: (
+			initialRegion?: import("../src/lib/captureRegion").CaptureRegion | null,
+		) => Promise<import("../src/lib/quickCaptureContracts").RegionSelectionResult>;
+		getRegionSelectorContext: () => Promise<
+			import("../src/lib/quickCaptureContracts").RegionSelectorContext | null
+		>;
+		confirmRegionSelection: (
+			rect: import("../src/lib/captureRegion").RegionRect,
+			startRecording: boolean,
+		) => Promise<{ success: boolean }>;
+		cancelRegionSelection: () => Promise<{ success: boolean }>;
+		showRegionFrame: (
+			region: import("../src/lib/captureRegion").CaptureRegion,
+		) => Promise<{ success: boolean }>;
+		hideRegionFrame: () => Promise<{ success: boolean }>;
+		selectScreenSource: (
+			displayId?: number,
+		) => Promise<{ selected: boolean; displayCount: number }>;
+		openClipOutput: (
+			title: string,
+		) => Promise<{ success: boolean; id?: string; path?: string; error?: string }>;
+		writeClipOutput: (
+			id: string,
+			position: number,
+			data: Uint8Array,
+		) => Promise<{ success: boolean; error?: string }>;
+		closeClipOutput: (
+			id: string,
+			discard?: boolean,
+		) => Promise<import("../src/lib/quickCaptureContracts").ClipFileResult>;
+		copyRecordingAsClip: (
+			sourcePath: string,
+			title: string,
+		) => Promise<import("../src/lib/quickCaptureContracts").ClipFileResult>;
+		renameClip: (
+			filePath: string,
+			title: string,
+		) => Promise<import("../src/lib/quickCaptureContracts").ClipFileResult>;
+		copyClipFile: (
+			filePath: string,
+		) => Promise<{ success: boolean; copied?: "file" | "path"; error?: string }>;
+		getClipThumbnail: (filePath: string) => Promise<{ success: boolean; dataUrl?: string }>;
+		startClipDrag: (filePath: string) => void;
+		trashClip: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+		discardRecordingSource: (
+			screenVideoPath: string,
+		) => Promise<{ success: boolean; error?: string }>;
 		setHudOverlayIgnoreMouseEvents: (ignore: boolean) => void;
 		moveHudOverlayBy: (deltaX: number, deltaY: number) => void;
 		setHudOverlaySize: (width: number, height: number) => void;

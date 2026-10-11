@@ -41,6 +41,7 @@ import {
 	resolveInterpolatedNativeCursorFrame,
 	resolveNativeCursorRenderAsset,
 } from "@/lib/cursor/nativeCursor";
+import { destroyPixiApp } from "@/lib/pixiDestroy";
 import { classifyWallpaper, DEFAULT_WALLPAPER, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
 import type { CursorRecordingData } from "@/native/contracts";
@@ -86,7 +87,7 @@ import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/la
 import { clamp01 } from "./videoPlayback/mathUtils";
 import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
 import { createVideoEventHandlers } from "./videoPlayback/videoEventHandlers";
-import { findDominantRegion } from "./videoPlayback/zoomRegionUtils";
+import { type CursorFrame, findDominantRegion } from "./videoPlayback/zoomRegionUtils";
 import { createZoomSpringState, resetZoomSpring, stepZoomSpring } from "./videoPlayback/zoomSpring";
 import {
 	applyZoomTransform,
@@ -126,6 +127,8 @@ interface VideoPlaybackProps {
 	motionBlurAmount?: number;
 	borderRadius?: number;
 	padding?: number;
+	/** Device mockup drawn around the video. */
+	deviceFrame?: import("@/lib/deviceFrame").DeviceFrameSettings;
 	cropRegion?: import("./types").CropRegion;
 	trimRegions?: TrimRegion[];
 	speedRegions?: SpeedRegion[];
@@ -289,6 +292,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			motionBlurAmount = 0,
 			borderRadius = 0,
 			padding = DEFAULT_EDITOR_LAYOUT_SETTINGS.padding,
+			deviceFrame,
 			cropRegion,
 			trimRegions = [],
 			speedRegions = [],
@@ -374,8 +378,19 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const baseScaleRef = useRef(1);
 		const baseOffsetRef = useRef({ x: 0, y: 0 });
 		const baseMaskRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+		// Where the cropped picture is painted. Equal to the mask unless the video covers a
+		// device screen, where the picture is larger than what the mask lets through; the
+		// cursor is placed on the picture, so it has to be projected onto this rectangle.
+		const croppedRectRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+		// The whole recording as fractions of the stage: turns the recorded cursor position
+		// into a zoom focus (see CursorFrame).
+		const cursorFrameRef = useRef<CursorFrame | undefined>(undefined);
 		const cropBoundsRef = useRef({ startX: 0, endX: 0, startY: 0, endY: 0 });
 		const maskGraphicsRef = useRef<Graphics | null>(null);
+		// Device mockup layers: one behind the video (body, bezel) and one in front
+		// (camera cutout). Both live in the camera container so they zoom with the video.
+		const deviceBackGraphicsRef = useRef<Graphics | null>(null);
+		const deviceFrontGraphicsRef = useRef<Graphics | null>(null);
 		const isPlayingRef = useRef(isPlaying);
 		const isSeekingRef = useRef(false);
 		const isScrubbingRef = useRef(false);
@@ -613,6 +628,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				webcamSizePreset,
 				webcamPosition,
 				webcamMaskShape,
+				deviceFrame,
+				deviceBackGraphics: deviceBackGraphicsRef.current,
+				deviceFrontGraphics: deviceFrontGraphicsRef.current,
 			});
 
 			if (result) {
@@ -621,6 +639,16 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				baseScaleRef.current = result.baseScale;
 				baseOffsetRef.current = result.baseOffset;
 				baseMaskRef.current = result.maskRect;
+				croppedRectRef.current = result.croppedRect;
+				cursorFrameRef.current =
+					result.stageSize.width > 0 && result.stageSize.height > 0
+						? {
+								x: result.fullVideoRect.x / result.stageSize.width,
+								y: result.fullVideoRect.y / result.stageSize.height,
+								width: result.fullVideoRect.width / result.stageSize.width,
+								height: result.fullVideoRect.height / result.stageSize.height,
+							}
+						: undefined;
 				borderRadiusRef.current = result.maskBorderRadius;
 				cropBoundsRef.current = result.cropBounds;
 				webcamLayoutRef.current = result.webcamRect;
@@ -647,6 +675,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			webcamSizePreset,
 			webcamPosition,
 			webcamMaskShape,
+			deviceFrame,
 		]);
 
 		useEffect(() => {
@@ -1095,11 +1124,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				app.ticker.maxFPS = 60;
 
 				if (!mounted) {
-					app.destroy(true, {
-						children: true,
-						texture: true,
-						textureSource: true,
-					});
+					destroyPixiApp(app);
 					return;
 				}
 
@@ -1129,10 +1154,20 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				cameraContainerRef.current = cameraContainer;
 				app.stage.addChild(cameraContainer);
 
+				const deviceBackGraphics = new Graphics();
+				deviceBackGraphics.eventMode = "none";
+				deviceBackGraphicsRef.current = deviceBackGraphics;
+				cameraContainer.addChild(deviceBackGraphics);
+
 				// Video container - holds the masked video sprite
 				const videoContainer = new Container();
 				videoContainerRef.current = videoContainer;
 				cameraContainer.addChild(videoContainer);
+
+				const deviceFrontGraphics = new Graphics();
+				deviceFrontGraphics.eventMode = "none";
+				deviceFrontGraphicsRef.current = deviceFrontGraphics;
+				cameraContainer.addChild(deviceFrontGraphics);
 
 				// Cursor overlay - rendered above the masked video
 				if (cursorOverlayEnabled) {
@@ -1168,15 +1203,13 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					if (handleContextRestored) {
 						app.canvas.removeEventListener("webglcontextrestored", handleContextRestored);
 					}
-					app.destroy(true, {
-						children: true,
-						texture: true,
-						textureSource: true,
-					});
+					destroyPixiApp(app);
 				}
 				appRef.current = null;
 				cameraContainerRef.current = null;
 				videoContainerRef.current = null;
+				deviceBackGraphicsRef.current = null;
+				deviceFrontGraphicsRef.current = null;
 				videoSpriteRef.current = null;
 			};
 		}, [pixiGeneration]);
@@ -1506,6 +1539,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					{
 						connectZooms: true,
 						cursorTelemetry: cursorTelemetryRef.current,
+						cursorFrame: cursorFrameRef.current,
 					},
 				);
 
@@ -1694,7 +1728,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					cursorOverlay.update(
 						cursorTelemetryRef.current,
 						timeMs,
-						baseMaskRef.current,
+						croppedRectRef.current,
 						showCursorRef.current && !hasNativeCursorRecordingRef.current,
 						!isPlayingRef.current || isSeekingRef.current,
 						cropRegionRef.current,
@@ -1739,7 +1773,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 							const cropRegionValue = cropRegionRef.current ?? DEFAULT_CROP_REGION;
 							const projectedLocalPoint = projectNativeCursorToLocal({
 								cropRegion: cropRegionValue,
-								maskRect: baseMaskRef.current,
+								maskRect: croppedRectRef.current,
 								sample: displaySample,
 							});
 							const projectedStagePoint =
@@ -1747,7 +1781,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 									? projectNativeCursorToStage({
 											cameraContainer,
 											cropRegion: cropRegionValue,
-											maskRect: baseMaskRef.current,
+											maskRect: croppedRectRef.current,
 											videoContainerPosition: {
 												x: videoContainer.x,
 												y: videoContainer.y,
@@ -1776,7 +1810,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 								const crop = cropRegionRef.current ?? DEFAULT_CROP_REGION;
 								const croppedVideoWidth = (videoRef.current?.videoWidth ?? 0) * crop.width;
 								const sizeNorm =
-									croppedVideoWidth > 0 ? baseMaskRef.current.width / croppedVideoWidth : 1;
+									croppedVideoWidth > 0 ? croppedRectRef.current.width / croppedVideoWidth : 1;
 								const transformedScale = scale * Math.abs(cameraContainer?.scale.x || 1) * sizeNorm;
 								const blurPx =
 									!isPlayingRef.current || isSeekingRef.current
@@ -1795,7 +1829,13 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 								// Clip to the camera-aware video boundary. Works here because nativeCursorClipRef
 								// sits outside preserve-3d. When cursorClipToBounds is off, let the cursor overflow.
 								if (nativeCursorClipRef.current) {
-									if (!cursorClipToBoundsRef.current) {
+									const pictureOverflowsMask =
+										croppedRectRef.current.width > baseMaskRef.current.width + 1 ||
+										croppedRectRef.current.height > baseMaskRef.current.height + 1;
+									// A picture that covers a screen (a device in Fill, a stacked camera
+									// layout) is larger than what is shown: there the cursor is always
+									// clipped, or it would be drawn on the wallpaper beside the device.
+									if (!cursorClipToBoundsRef.current && !pictureOverflowsMask) {
 										nativeCursorClipRef.current.style.clipPath = "none";
 									} else {
 										const mask = baseMaskRef.current;
@@ -2149,7 +2189,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						>
 							<div
 								ref={focusIndicatorRef}
-								className="absolute rounded-md border border-[#34B27B]/80 bg-[#34B27B]/20 shadow-[0_0_0_1px_rgba(52,178,123,0.35)]"
+								className="absolute rounded-md border border-[#0A84FF]/80 bg-[#0A84FF]/20 shadow-[0_0_0_1px_rgba(10, 132, 255,0.35)]"
 								style={{ display: "none", pointerEvents: "none" }}
 							/>
 							{(() => {

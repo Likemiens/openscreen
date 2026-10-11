@@ -1,6 +1,7 @@
 import type { Span } from "dnd-timeline";
-import { CloudUpload, Download, FolderOpen, Save, Video } from "lucide-react";
+import { Film, FolderOpen, Save, Video } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -64,16 +65,21 @@ import {
 	saveUserPreferences,
 } from "@/lib/userPreferences";
 import { BackgroundLoadError } from "@/lib/wallpaper";
+import type { YandexDiskSettings } from "@/lib/yandexDisk";
 import { nativeBridgeClient, useCursorRecordingData, useCursorTelemetry } from "@/native";
 import type { NativePlatform } from "@/native/contracts";
 import {
+	type AspectRatio,
 	getAspectRatioValue,
 	getNativeAspectRatioValue,
 	isPortraitAspectRatio,
 } from "@/utils/aspectRatioUtils";
+import hud from "../launch/hud.module.css";
+import { YandexDiskSettingsPanel } from "../launch/YandexDiskSettingsPanel";
 import { EditorEmptyState } from "./EditorEmptyState";
 import { EditorMenuBar } from "./EditorMenuBar";
 import { ExportDialog } from "./ExportDialog";
+import { ExportMenu } from "./ExportMenu";
 import {
 	DEFAULT_CURSOR_SETTINGS,
 	DEFAULT_EXPORT_SETTINGS,
@@ -106,6 +112,7 @@ import {
 } from "./regionClipboard";
 import { findFreeGapAt } from "./regionPlacement";
 import { SettingsPanel } from "./SettingsPanel";
+import { removeClipSpan } from "./timeline/clipPieces";
 import TimelineEditor from "./timeline/TimelineEditor";
 import { buildAutoZoomSuggestions } from "./timeline/zoomSuggestionUtils";
 import {
@@ -217,6 +224,7 @@ export default function VideoEditor() {
 		autoZoomEnabled,
 		autoFocusAll,
 		trimRegions,
+		clipSplits,
 		speedRegions,
 		annotationRegions,
 		cropRegion,
@@ -227,6 +235,7 @@ export default function VideoEditor() {
 		motionBlurAmount,
 		borderRadius,
 		padding,
+		deviceFrame,
 		aspectRatio,
 		webcamLayoutPreset,
 		webcamMaskShape,
@@ -286,6 +295,13 @@ export default function VideoEditor() {
 		DEFAULT_GIF_SETTINGS.sizePreset,
 	);
 	const [exportedFilePath, setExportedFilePath] = useState<string | null>(null);
+	const [yandexSettings, setYandexSettings] = useState<YandexDiskSettings | null>(null);
+	const [showYandexSettings, setShowYandexSettings] = useState(false);
+	// Set when Publish had to stop to connect Yandex Disk, so it resumes once connected.
+	const publishAfterConnectRef = useRef(false);
+	// True from the moment an export is asked for until it has finished: a second click
+	// on a menu that is still fading out must not start a second render.
+	const exportInFlightRef = useRef(false);
 	const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
 	const [unsavedExport, setUnsavedExport] = useState<{
 		arrayBuffer: ArrayBuffer;
@@ -456,12 +472,14 @@ export default function VideoEditor() {
 				motionBlurAmount: normalizedEditor.motionBlurAmount,
 				borderRadius: normalizedEditor.borderRadius,
 				padding: normalizedEditor.padding,
+				deviceFrame: normalizedEditor.deviceFrame,
 				cropRegion: normalizedEditor.cropRegion,
 				zoomRegions: normalizedEditor.zoomRegions,
 				cameraFullscreenRegions: normalizedEditor.cameraFullscreenRegions,
 				autoZoomEnabled: normalizedEditor.autoZoomEnabled,
 				autoFocusAll: normalizedEditor.autoFocusAll,
 				trimRegions: normalizedEditor.trimRegions,
+				clipSplits: normalizedEditor.clipSplits,
 				speedRegions: normalizedEditor.speedRegions,
 				annotationRegions: normalizedEditor.annotationRegions,
 				aspectRatio: normalizedEditor.aspectRatio,
@@ -539,12 +557,14 @@ export default function VideoEditor() {
 			motionBlurAmount,
 			borderRadius,
 			padding,
+			deviceFrame,
 			cropRegion,
 			zoomRegions,
 			cameraFullscreenRegions,
 			autoZoomEnabled,
 			autoFocusAll,
 			trimRegions,
+			clipSplits,
 			speedRegions,
 			annotationRegions,
 			aspectRatio,
@@ -571,12 +591,14 @@ export default function VideoEditor() {
 		motionBlurAmount,
 		borderRadius,
 		padding,
+		deviceFrame,
 		cropRegion,
 		zoomRegions,
 		cameraFullscreenRegions,
 		autoZoomEnabled,
 		autoFocusAll,
 		trimRegions,
+		clipSplits,
 		speedRegions,
 		annotationRegions,
 		aspectRatio,
@@ -594,6 +616,57 @@ export default function VideoEditor() {
 	]);
 
 	const hasUnsavedChanges = hasProjectUnsavedChanges(currentProjectSnapshot, lastSavedSnapshot);
+	const sourceFileName = useMemo(() => {
+		const sourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
+		return sourcePath ? (sourcePath.split(/[\\/]/).pop() ?? null) : null;
+	}, [videoPath, videoSourcePath]);
+
+	// Makes whatever the main process holds as the current recording (or plain video)
+	// the editor's media, and records "nothing changed yet" for the unsaved-changes check.
+	// Main restores a recording's camera track and cursor mode from its session file, so
+	// an OpenScreen recording opened as a file comes back whole.
+	const adoptCurrentMedia = useCallback(async (): Promise<boolean> => {
+		const currentSessionResult = await window.electronAPI.getCurrentRecordingSession();
+		if (currentSessionResult.success && currentSessionResult.session) {
+			const session = currentSessionResult.session;
+			const sourcePath = fromFileUrl(session.screenVideoPath);
+			const webcamSourcePath = session.webcamVideoPath
+				? fromFileUrl(session.webcamVideoPath)
+				: null;
+			setVideoSourcePath(sourcePath);
+			setVideoPath(toFileUrl(sourcePath));
+			setWebcamVideoSourcePath(webcamSourcePath);
+			setWebcamVideoPath(webcamSourcePath ? toFileUrl(webcamSourcePath) : null);
+			setRecordingCursorCaptureMode(session.cursorCaptureMode ?? null);
+			setCurrentProjectPath(null);
+			setLastSavedSnapshot(
+				createProjectSnapshot(
+					{
+						screenVideoPath: sourcePath,
+						...(webcamSourcePath ? { webcamVideoPath: webcamSourcePath } : {}),
+						...(session.cursorCaptureMode ? { cursorCaptureMode: session.cursorCaptureMode } : {}),
+					},
+					INITIAL_EDITOR_STATE,
+				),
+			);
+			return true;
+		}
+
+		const result = await nativeBridgeClient.project.getCurrentVideoPath();
+		if (result.success && result.path) {
+			setVideoSourcePath(result.path);
+			setVideoPath(toFileUrl(result.path));
+			setWebcamVideoSourcePath(null);
+			setWebcamVideoPath(null);
+			setRecordingCursorCaptureMode(null);
+			setCurrentProjectPath(null);
+			setLastSavedSnapshot(
+				createProjectSnapshot({ screenVideoPath: result.path }, INITIAL_EDITOR_STATE),
+			);
+			return true;
+		}
+		return false;
+	}, []);
 
 	useEffect(() => {
 		async function loadInitialData() {
@@ -609,44 +682,7 @@ export default function VideoEditor() {
 					}
 				}
 
-				const currentSessionResult = await window.electronAPI.getCurrentRecordingSession();
-				if (currentSessionResult.success && currentSessionResult.session) {
-					const session = currentSessionResult.session;
-					const sourcePath = fromFileUrl(session.screenVideoPath);
-					const webcamSourcePath = session.webcamVideoPath
-						? fromFileUrl(session.webcamVideoPath)
-						: null;
-					setVideoSourcePath(sourcePath);
-					setVideoPath(toFileUrl(sourcePath));
-					setWebcamVideoSourcePath(webcamSourcePath);
-					setWebcamVideoPath(webcamSourcePath ? toFileUrl(webcamSourcePath) : null);
-					setRecordingCursorCaptureMode(session.cursorCaptureMode ?? null);
-					setCurrentProjectPath(null);
-					setLastSavedSnapshot(
-						createProjectSnapshot(
-							{
-								screenVideoPath: sourcePath,
-								...(webcamSourcePath ? { webcamVideoPath: webcamSourcePath } : {}),
-								...(session.cursorCaptureMode
-									? { cursorCaptureMode: session.cursorCaptureMode }
-									: {}),
-							},
-							INITIAL_EDITOR_STATE,
-						),
-					);
-					return;
-				}
-
-				const result = await nativeBridgeClient.project.getCurrentVideoPath();
-				if (result.success && result.path) {
-					setVideoSourcePath(result.path);
-					setVideoPath(toFileUrl(result.path));
-					setRecordingCursorCaptureMode(null);
-					setCurrentProjectPath(null);
-					setLastSavedSnapshot(
-						createProjectSnapshot({ screenVideoPath: result.path }, INITIAL_EDITOR_STATE),
-					);
-				}
+				await adoptCurrentMedia();
 				// No video/project/session, so leave videoPath null and let the
 				// EditorEmptyState dashboard render instead of an error screen.
 			} catch (err) {
@@ -657,7 +693,7 @@ export default function VideoEditor() {
 		}
 
 		loadInitialData();
-	}, [applyLoadedProject]);
+	}, [applyLoadedProject, adoptCurrentMedia]);
 
 	// Avoid overwriting saved prefs with defaults before they've loaded.
 	const [prefsHydrated, setPrefsHydrated] = useState(false);
@@ -700,12 +736,14 @@ export default function VideoEditor() {
 				motionBlurAmount,
 				borderRadius,
 				padding,
+				deviceFrame,
 				cropRegion,
 				zoomRegions,
 				cameraFullscreenRegions,
 				autoZoomEnabled,
 				autoFocusAll,
 				trimRegions,
+				clipSplits,
 				speedRegions,
 				annotationRegions,
 				aspectRatio,
@@ -766,12 +804,14 @@ export default function VideoEditor() {
 			motionBlurAmount,
 			borderRadius,
 			padding,
+			deviceFrame,
 			cropRegion,
 			zoomRegions,
 			cameraFullscreenRegions,
 			autoZoomEnabled,
 			autoFocusAll,
 			trimRegions,
+			clipSplits,
 			speedRegions,
 			annotationRegions,
 			aspectRatio,
@@ -894,6 +934,37 @@ export default function VideoEditor() {
 
 	// New Project: clear all media/project/editor state back to the empty
 	// Studio dashboard. Prompts to save first when there are unsaved changes.
+	// A video the user picked or dropped, already made current in the main process.
+	const adoptOpenedVideo = useCallback(
+		async (sourcePath: string) => {
+			if (!(await adoptCurrentMedia())) {
+				toast.error("Could not open that video.");
+				return;
+			}
+			// The title names the exported file. A different video must not inherit the
+			// previous title, or publishing it would replace the earlier upload.
+			const fileName = sourcePath.split(/[\\/]/).pop() ?? "";
+			setRecordingTitle(sanitizeRecordingTitle(fileName.replace(/\.[^.]+$/, "")));
+		},
+		[adoptCurrentMedia],
+	);
+
+	const loadVideoIntoEditor = useCallback(
+		async (sourcePath: string) => {
+			const selected = await nativeBridgeClient.project.setCurrentVideoPath(sourcePath);
+			if (!selected.success) {
+				toast.error("Could not open that video.");
+				return;
+			}
+			await adoptOpenedVideo(sourcePath);
+		},
+		[adoptOpenedVideo],
+	);
+
+	// A video picked through "Open video" while another one is loaded. It is opened
+	// once the current project has been reset (after the unsaved-changes prompt, if any).
+	const pendingVideoPathRef = useRef<string | null>(null);
+
 	const doNewProject = useCallback(async () => {
 		await nativeBridgeClient.project.clearCurrentVideoPath();
 		setVideoPath(null);
@@ -929,9 +1000,45 @@ export default function VideoEditor() {
 		nextSpeedIdRef.current = 1;
 		nextAnnotationIdRef.current = 1;
 		nextAnnotationZIndexRef.current = 1;
-	}, [resetState]);
+
+		const pendingVideoPath = pendingVideoPathRef.current;
+		pendingVideoPathRef.current = null;
+		if (pendingVideoPath) await loadVideoIntoEditor(pendingVideoPath);
+	}, [resetState, loadVideoIntoEditor]);
+
+	const handleOpenVideo = useCallback(async () => {
+		const picked = await window.electronAPI.openVideoFilePicker();
+		if (picked.canceled || !picked.success || !picked.path) return;
+		if (!videoPath) {
+			await loadVideoIntoEditor(picked.path);
+			return;
+		}
+		pendingVideoPathRef.current = picked.path;
+		if (hasUnsavedChanges) {
+			setConfirmDialogVariant("newProject");
+			return;
+		}
+		await doNewProject();
+	}, [videoPath, hasUnsavedChanges, doNewProject, loadVideoIntoEditor]);
+
+	const handleAspectRatioChange = useCallback(
+		(next: AspectRatio) => {
+			pushState({
+				aspectRatio: next,
+				// A camera layout made for the other orientation falls back to picture-in-picture.
+				webcamLayoutPreset:
+					(isPortraitAspectRatio(next) && webcamLayoutPreset === "dual-frame") ||
+					(!isPortraitAspectRatio(next) && webcamLayoutPreset === "vertical-stack")
+						? "picture-in-picture"
+						: webcamLayoutPreset,
+			});
+		},
+		[pushState, webcamLayoutPreset],
+	);
 
 	const handleNewProject = useCallback(async () => {
+		// New Project means an empty Studio, never a video left waiting by "Open video".
+		pendingVideoPathRef.current = null;
 		if (hasUnsavedChanges) {
 			setConfirmDialogVariant("newProject");
 			return;
@@ -944,6 +1051,9 @@ export default function VideoEditor() {
 		const saved = await saveProject(false);
 		if (saved) {
 			await doNewProject();
+		} else {
+			// The save was cancelled, so the switch is off and nothing is left pending.
+			pendingVideoPathRef.current = null;
 		}
 	}, [saveProject, doNewProject]);
 
@@ -1409,6 +1519,18 @@ export default function VideoEditor() {
 			}));
 		},
 		[selectedZoomId, pushState],
+	);
+
+	// A piece of the clip cut out on the timeline. It becomes a trim region like any other,
+	// but is not left selected: the piece is gone, and the next click picks something new.
+	const handleClipPieceRemove = useCallback(
+		(span: Span) => {
+			const id = `trim-${nextTrimIdRef.current++}`;
+			pushState((prev) => ({
+				trimRegions: removeClipSpan(prev.trimRegions, span, id) as TrimRegion[],
+			}));
+		},
+		[pushState],
 	);
 
 	const handleTrimDelete = useCallback(
@@ -2330,6 +2452,7 @@ export default function VideoEditor() {
 						motionBlurAmount,
 						borderRadius,
 						padding,
+						deviceFrame,
 						videoPadding: padding,
 						cropRegion,
 						cursorRecordingData,
@@ -2414,6 +2537,7 @@ export default function VideoEditor() {
 						motionBlurAmount,
 						borderRadius,
 						padding,
+						deviceFrame,
 						cropRegion,
 						cursorRecordingData,
 						cursorScale: effectiveShowCursor ? cursorSize : 0,
@@ -2516,6 +2640,7 @@ export default function VideoEditor() {
 			motionBlurAmount,
 			borderRadius,
 			padding,
+			deviceFrame,
 			cropRegion,
 			cursorRecordingData,
 			annotationRegions,
@@ -2545,6 +2670,7 @@ export default function VideoEditor() {
 
 	const handleOpenExportDialog = useCallback(
 		(destination: ExportDestination = "local") => {
+			if (exportInFlightRef.current) return;
 			if (!videoPath) {
 				toast.error("No video loaded");
 				return;
@@ -2599,7 +2725,10 @@ export default function VideoEditor() {
 			setExportedFilePath(null);
 
 			// Start export immediately
-			handleExport(settings, destination);
+			exportInFlightRef.current = true;
+			void handleExport(settings, destination).finally(() => {
+				exportInFlightRef.current = false;
+			});
 		},
 		[
 			videoPath,
@@ -2615,17 +2744,39 @@ export default function VideoEditor() {
 		],
 	);
 
+	const refreshYandexSettings = useCallback(async () => {
+		const result = await window.electronAPI.getYandexDiskSettings();
+		const settings = result.success ? (result.settings ?? null) : null;
+		if (settings) setYandexSettings(settings);
+		return settings;
+	}, []);
+
+	useEffect(() => {
+		void refreshYandexSettings();
+	}, [refreshYandexSettings]);
+
 	const handlePublish = useCallback(async () => {
-		const settingsResult = await window.electronAPI.getYandexDiskSettings();
-		if (!settingsResult.success || !settingsResult.settings?.connected) {
-			toast.error("Connect Yandex Disk first", {
-				description: "Return to the recording toolbar and open Yandex Disk settings.",
-			});
+		const settings = await refreshYandexSettings();
+		if (!settings?.connected) {
+			// Publish was pressed but the account turned out to be disconnected: connect
+			// right here, then carry on with the publish that was asked for.
+			publishAfterConnectRef.current = true;
+			setShowYandexSettings(true);
 			return;
 		}
 
 		handleOpenExportDialog("yandex");
-	}, [handleOpenExportDialog]);
+	}, [handleOpenExportDialog, refreshYandexSettings]);
+
+	const handleYandexSettingsChange = useCallback(
+		(settings: YandexDiskSettings) => {
+			setYandexSettings(settings);
+			const publishNow = publishAfterConnectRef.current && settings.connected;
+			publishAfterConnectRef.current = false;
+			if (publishNow) handleOpenExportDialog("yandex");
+		},
+		[handleOpenExportDialog],
+	);
 
 	useEffect(() => {
 		if (
@@ -2793,19 +2944,6 @@ export default function VideoEditor() {
 		[videoPath, trimRegions, pushState, t],
 	);
 
-	const handleSaveDiagnostic = useCallback(async () => {
-		const result = await window.electronAPI.saveDiagnostic({
-			error: exportError ?? "Manual diagnostic export",
-			projectState: editorState,
-			logs: [],
-		});
-		if (result.success) {
-			toast.success("Diagnostic file saved");
-		} else if (!result.canceled) {
-			toast.error("Failed to save diagnostic file");
-		}
-	}, [exportError, editorState]);
-
 	if (loading) {
 		return (
 			<div className="flex items-center justify-center h-screen bg-background">
@@ -2821,7 +2959,7 @@ export default function VideoEditor() {
 					<button
 						type="button"
 						onClick={handleLoadProject}
-						className="px-3 py-1.5 rounded-md bg-[#34B27B] text-white text-sm hover:bg-[#34B27B]/90"
+						className="px-3 py-1.5 rounded-md bg-[#0A84FF] text-white text-sm hover:bg-[#0A84FF]/90"
 					>
 						{ts("project.load")}
 					</button>
@@ -2830,8 +2968,63 @@ export default function VideoEditor() {
 		);
 	}
 
+	// What the Export menu describes: the cropped source, and the GIF it would produce.
+	const exportVideo = videoPlaybackRef.current?.video;
+	const exportSourceSize = exportVideo?.videoWidth
+		? calculateEffectiveSourceDimensions(
+				exportVideo.videoWidth,
+				exportVideo.videoHeight,
+				cropRegion,
+			)
+		: null;
+	const gifSourceSize =
+		exportSourceSize ??
+		calculateEffectiveSourceDimensions(
+			DEFAULT_SOURCE_DIMENSIONS.width,
+			DEFAULT_SOURCE_DIMENSIONS.height,
+			cropRegion,
+		);
+	const gifOutputSize = calculateOutputDimensions(
+		gifSourceSize.width,
+		gifSourceSize.height,
+		gifSizePreset,
+		GIF_SIZE_PRESETS,
+		aspectRatio === "native"
+			? getNativeAspectRatioValue(
+					exportVideo?.videoWidth || DEFAULT_SOURCE_DIMENSIONS.width,
+					exportVideo?.videoHeight || DEFAULT_SOURCE_DIMENSIONS.height,
+					cropRegion,
+				)
+			: getAspectRatioValue(aspectRatio),
+	);
+
 	return (
-		<div className="flex flex-col h-screen bg-[#09090b] text-slate-200 overflow-hidden selection:bg-[#34B27B]/30">
+		<div className="flex flex-col h-screen bg-[#161618] text-slate-200 overflow-hidden selection:bg-[#0A84FF]/30">
+			{showYandexSettings &&
+				createPortal(
+					<div
+						className="fixed inset-0 z-[220] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+						data-testid="studio-yandex-dialog"
+						onPointerDown={() => {
+							publishAfterConnectRef.current = false;
+							setShowYandexSettings(false);
+						}}
+					>
+						<div className={hud.root}>
+							<YandexDiskSettingsPanel
+								open
+								settings={yandexSettings}
+								isRussian={false}
+								onClose={() => {
+									publishAfterConnectRef.current = false;
+									setShowYandexSettings(false);
+								}}
+								onSettingsChange={handleYandexSettingsChange}
+							/>
+						</div>
+					</div>,
+					document.body,
+				)}
 			<Dialog open={showNewRecordingDialog} onOpenChange={setShowNewRecordingDialog}>
 				<DialogContent
 					className="sm:max-w-[425px]"
@@ -2852,7 +3045,7 @@ export default function VideoEditor() {
 						<button
 							type="button"
 							onClick={handleNewRecordingConfirm}
-							className="px-4 py-2 rounded-md bg-[#34B27B] text-white hover:bg-[#34B27B]/90 text-sm font-medium transition-colors"
+							className="px-4 py-2 rounded-md bg-[#0A84FF] text-white hover:bg-[#0A84FF]/90 text-sm font-medium transition-colors"
 						>
 							{t("newRecording.confirm")}
 						</button>
@@ -2931,7 +3124,7 @@ export default function VideoEditor() {
 								setShowAutoCaptionsDialog(false);
 								void generateAutoCaptions(captionWordsMin, captionWordsMax);
 							}}
-							className="bg-[#34B27B] text-white hover:bg-[#34B27B]/90"
+							className="bg-[#0A84FF] text-white hover:bg-[#0A84FF]/90"
 						>
 							{t("autoCaptions.generate")}
 						</Button>
@@ -2940,7 +3133,7 @@ export default function VideoEditor() {
 			</Dialog>
 
 			<div
-				className="h-11 flex-shrink-0 bg-[#070809]/85 backdrop-blur-xl border-b border-white/[0.07] flex items-center justify-between px-5 z-50 shadow-[0_1px_0_rgba(255,255,255,0.03)]"
+				className="h-11 flex-shrink-0 bg-[#1c1c1e]/85 backdrop-blur-xl border-b border-white/[0.07] flex items-center justify-between px-5 z-50 shadow-[0_1px_0_rgba(255,255,255,0.03)]"
 				style={{ WebkitAppRegion: "drag" } as CSSProperties}
 			>
 				<div
@@ -2966,11 +3159,12 @@ export default function VideoEditor() {
 
 					<input
 						type="text"
-						aria-label="Название видео"
+						aria-label="Video title"
+						title="Video title — also the name of the exported file"
 						value={recordingTitle}
 						onChange={(event) => setRecordingTitle(event.target.value)}
 						onBlur={() => setRecordingTitle((title) => sanitizeRecordingTitle(title))}
-						className="ml-1 h-8 w-56 rounded-lg border border-white/[0.08] bg-white/[0.045] px-3 text-[12px] font-medium text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-emerald-400/40 focus:bg-white/[0.07]"
+						className="ml-1 h-8 w-56 rounded-lg border border-white/[0.08] bg-white/[0.045] px-3 text-[12px] font-medium text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-[#0A84FF]/60 focus:bg-white/[0.07]"
 					/>
 					<button
 						type="button"
@@ -2979,6 +3173,15 @@ export default function VideoEditor() {
 					>
 						<Video size={15} />
 						{t("newRecording.title")}
+					</button>
+					<button
+						type="button"
+						data-testid="studio-titlebar-open-video"
+						onClick={() => void handleOpenVideo()}
+						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all duration-150 text-[13px] font-medium"
+					>
+						<Film size={15} />
+						Open Video
 					</button>
 					<button
 						type="button"
@@ -2997,24 +3200,31 @@ export default function VideoEditor() {
 						{ts("project.save")}
 					</button>
 					<div className="ml-auto flex items-center gap-2">
-						<button
-							type="button"
+						<ExportMenu
 							disabled={!videoPath || isExporting}
-							onClick={() => handleOpenExportDialog("local")}
-							className="flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-[12px] font-semibold text-slate-200 transition-colors hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:opacity-40"
-						>
-							<Download size={14} />
-							Save Local
-						</button>
-						<button
-							type="button"
-							disabled={!videoPath || isExporting}
-							onClick={() => void handlePublish()}
-							className="flex h-8 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-[12px] font-semibold text-emerald-950 transition-colors hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
-						>
-							<CloudUpload size={14} />
-							Publish
-						</button>
+							format={exportFormat}
+							onFormatChange={setExportFormat}
+							quality={exportQuality}
+							onQualityChange={setExportQuality}
+							sourceSize={exportSourceSize}
+							gifFrameRate={gifFrameRate}
+							onGifFrameRateChange={setGifFrameRate}
+							gifSizePreset={gifSizePreset}
+							onGifSizePresetChange={setGifSizePreset}
+							gifLoop={gifLoop}
+							onGifLoopChange={setGifLoop}
+							gifOutputSize={gifOutputSize}
+							yandexConnected={yandexSettings ? yandexSettings.connected : null}
+							onSave={() => handleOpenExportDialog("local")}
+							onPublish={() => void handlePublish()}
+							onConnectYandex={() => {
+								publishAfterConnectRef.current = false;
+								setShowYandexSettings(true);
+							}}
+							hasUnsavedExport={Boolean(unsavedExport)}
+							onSaveUnsavedExport={handleSaveUnsavedExport}
+							onOpen={() => void refreshYandexSettings()}
+						/>
 					</div>
 				</div>
 			</div>
@@ -3023,12 +3233,8 @@ export default function VideoEditor() {
 			{!videoPath && (
 				<div className="flex-1 min-h-0 relative">
 					<EditorEmptyState
-						onVideoImported={(path) => {
-							setVideoPath(toFileUrl(path));
-							setVideoSourcePath(path);
-							setWebcamVideoPath(null);
-							setWebcamVideoSourcePath(null);
-						}}
+						onVideoImported={(path) => void adoptOpenedVideo(path)}
+						onVideoDropped={(path: string) => void loadVideoIntoEditor(path)}
 						onProjectOpened={async (project, path) => {
 							const restored = await applyLoadedProject(project, path);
 							if (!restored) {
@@ -3050,7 +3256,7 @@ export default function VideoEditor() {
 										ref={playerContainerRef}
 										className={
 											isFullscreen
-												? "fixed inset-0 z-[99999] w-full h-full flex flex-col items-center justify-center bg-[#09090b]"
+												? "fixed inset-0 z-[99999] w-full h-full flex flex-col items-center justify-center bg-[#161618]"
 												: "editor-preview-panel w-full h-full flex flex-col items-center justify-center overflow-hidden relative"
 										}
 									>
@@ -3104,6 +3310,7 @@ export default function VideoEditor() {
 													motionBlurAmount={motionBlurAmount}
 													borderRadius={borderRadius}
 													padding={padding}
+													deviceFrame={deviceFrame}
 													cropRegion={cropRegion}
 													cursorRecordingData={cursorRecordingData}
 													trimRegions={trimRegions}
@@ -3217,6 +3424,11 @@ export default function VideoEditor() {
 										cropRegion={cropRegion}
 										onCropChange={(r) => pushState({ cropRegion: r })}
 										aspectRatio={aspectRatio}
+										onAspectRatioChange={handleAspectRatioChange}
+										deviceFrame={deviceFrame}
+										onDeviceFrameChange={(next) => pushState({ deviceFrame: next })}
+										sourceName={sourceFileName}
+										onOpenVideo={() => void handleOpenVideo()}
 										hasWebcam={Boolean(webcamVideoPath)}
 										webcamLayoutPreset={webcamLayoutPreset}
 										onWebcamLayoutPresetChange={(preset) =>
@@ -3237,49 +3449,6 @@ export default function VideoEditor() {
 										onWebcamSizePresetChange={(v) => updateState({ webcamSizePreset: v })}
 										onWebcamSizePresetCommit={commitState}
 										videoElement={videoPlaybackRef.current?.video || null}
-										exportQuality={exportQuality}
-										onExportQualityChange={setExportQuality}
-										exportFormat={exportFormat}
-										onExportFormatChange={setExportFormat}
-										gifFrameRate={gifFrameRate}
-										onGifFrameRateChange={setGifFrameRate}
-										gifLoop={gifLoop}
-										onGifLoopChange={setGifLoop}
-										gifSizePreset={gifSizePreset}
-										onGifSizePresetChange={setGifSizePreset}
-										gifOutputDimensions={calculateOutputDimensions(
-											calculateEffectiveSourceDimensions(
-												videoPlaybackRef.current?.video?.videoWidth ||
-													DEFAULT_SOURCE_DIMENSIONS.width,
-												videoPlaybackRef.current?.video?.videoHeight ||
-													DEFAULT_SOURCE_DIMENSIONS.height,
-												cropRegion,
-											).width,
-											calculateEffectiveSourceDimensions(
-												videoPlaybackRef.current?.video?.videoWidth ||
-													DEFAULT_SOURCE_DIMENSIONS.width,
-												videoPlaybackRef.current?.video?.videoHeight ||
-													DEFAULT_SOURCE_DIMENSIONS.height,
-												cropRegion,
-											).height,
-											gifSizePreset,
-											GIF_SIZE_PRESETS,
-											aspectRatio === "native"
-												? getNativeAspectRatioValue(
-														videoPlaybackRef.current?.video?.videoWidth ||
-															DEFAULT_SOURCE_DIMENSIONS.width,
-														videoPlaybackRef.current?.video?.videoHeight ||
-															DEFAULT_SOURCE_DIMENSIONS.height,
-														cropRegion,
-													)
-												: getAspectRatioValue(aspectRatio),
-										)}
-										onExport={() => handleOpenExportDialog("local")}
-										onExportPanelOpen={() => {
-											setSelectedZoomId(null);
-											setSelectedTrimId(null);
-											setSelectedSpeedId(null);
-										}}
 										selectedAnnotationId={selectedAnnotationId}
 										annotationRegions={annotationOnlyRegions}
 										onAnnotationContentChange={handleAnnotationContentChange}
@@ -3301,9 +3470,6 @@ export default function VideoEditor() {
 										}
 										onSpeedChange={handleSpeedChange}
 										onSpeedDelete={handleSpeedDelete}
-										unsavedExport={unsavedExport}
-										onSaveUnsavedExport={handleSaveUnsavedExport}
-										onSaveDiagnostic={handleSaveDiagnostic}
 										showCursor={showCursor}
 										onShowCursorChange={setShowCursor}
 										cursorSize={cursorSize}
@@ -3329,7 +3495,7 @@ export default function VideoEditor() {
 						</Panel>
 
 						<PanelResizeHandle className="editor-resize-handle group">
-							<div className="w-10 h-1 bg-white/20 rounded-full transition-colors group-hover:bg-[#34B27B]/70"></div>
+							<div className="w-10 h-1 bg-white/20 rounded-full transition-colors group-hover:bg-[#0A84FF]/70"></div>
 						</PanelResizeHandle>
 
 						{/* Full-width timeline */}
@@ -3362,6 +3528,10 @@ export default function VideoEditor() {
 									onTrimDelete={handleTrimDelete}
 									selectedTrimId={selectedTrimId}
 									onSelectTrim={handleSelectTrim}
+									clipSplits={clipSplits}
+									onClipSplitsChange={(splits) => pushState({ clipSplits: splits })}
+									onClipPieceRemove={handleClipPieceRemove}
+									showFilmstrip={!isBackgroundExport}
 									speedRegions={speedRegions}
 									onSpeedAdded={handleSpeedAdded}
 									onSpeedSpanChange={handleSpeedSpanChange}
@@ -3381,16 +3551,7 @@ export default function VideoEditor() {
 									selectedBlurId={selectedBlurId}
 									onSelectBlur={handleSelectBlur}
 									aspectRatio={aspectRatio}
-									onAspectRatioChange={(ar) =>
-										pushState({
-											aspectRatio: ar,
-											webcamLayoutPreset:
-												(isPortraitAspectRatio(ar) && webcamLayoutPreset === "dual-frame") ||
-												(!isPortraitAspectRatio(ar) && webcamLayoutPreset === "vertical-stack")
-													? "picture-in-picture"
-													: webcamLayoutPreset,
-										})
-									}
+									onAspectRatioChange={handleAspectRatioChange}
 									videoUrl={videoPath ?? undefined}
 									showTrimWaveform={showTrimWaveform}
 									captionsLabel={t("autoCaptions.button")}
@@ -3447,7 +3608,11 @@ export default function VideoEditor() {
 						? handleLoadProjectConfirmDiscard
 						: handleNewProjectConfirmDiscard
 				}
-				onCancel={() => setConfirmDialogVariant(null)}
+				onCancel={() => {
+					// Cancelling also drops a video that was waiting to be opened.
+					pendingVideoPathRef.current = null;
+					setConfirmDialogVariant(null);
+				}}
 			/>
 		</div>
 	);

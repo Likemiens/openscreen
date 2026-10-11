@@ -22,6 +22,10 @@ import {
 const SETTINGS_FILE_NAME = "yandex-disk.json";
 const API_BASE_URL = "https://cloud-api.yandex.net/v1/disk";
 const UPLOAD_EVENT = "yandex-disk-upload-status";
+// The destination folder is re-verified before uploads, but not more often than this:
+// the check costs a full API round-trip and the folder does not change between clips.
+const FOLDER_VERIFICATION_TTL_MS = 10 * 60 * 1000;
+const UPLOAD_PROGRESS_INTERVAL_MS = 200;
 
 interface PendingLocalDeletion {
 	filePath: string;
@@ -126,7 +130,11 @@ async function getUploadUrl(remotePath: string, accessToken: string): Promise<st
 	return body.href;
 }
 
-async function putFile(uploadUrl: string, filePath: string): Promise<void> {
+async function putFile(
+	uploadUrl: string,
+	filePath: string,
+	onProgress?: (fraction: number) => void,
+): Promise<void> {
 	const stats = await fs.stat(filePath);
 
 	await new Promise<void>((resolve, reject) => {
@@ -165,6 +173,17 @@ async function putFile(uploadUrl: string, filePath: string): Promise<void> {
 		request.on("error", reject);
 		const stream = createReadStream(filePath);
 		stream.on("error", (error) => request.destroy(error));
+		if (onProgress && stats.size > 0) {
+			let sentBytes = 0;
+			let lastReportAt = 0;
+			stream.on("data", (chunk) => {
+				sentBytes += chunk.length;
+				const now = Date.now();
+				if (now - lastReportAt < UPLOAD_PROGRESS_INTERVAL_MS && sentBytes < stats.size) return;
+				lastReportAt = now;
+				onProgress(Math.min(1, sentBytes / stats.size));
+			});
+		}
 		stream.pipe(request);
 	});
 }
@@ -226,6 +245,9 @@ class YandexDiskService {
 	private uploadQueue: Promise<void> = Promise.resolve();
 	private editorActive = false;
 	private cleanupInProgress = false;
+	private readonly approvedUploadPaths = new Set<string>();
+	// Keyed by the encrypted token so the plaintext never outlives a request.
+	private verifiedFolder: { folder: string; tokenKey: string; at: number } | null = null;
 
 	constructor(
 		private readonly recordingsDirectory: string,
@@ -260,6 +282,38 @@ class YandexDiskService {
 	setEditorActive(active: boolean): void {
 		this.editorActive = active;
 		if (!active) void this.cleanupPendingLocalFiles();
+	}
+
+	/** Allows uploading a clip OpenScreen saved outside its recordings folder. */
+	approveUploadPath(filePath: string): void {
+		this.approvedUploadPaths.add(this.normalizeApprovedPath(filePath));
+	}
+
+	revokeUploadPath(filePath: string): void {
+		this.approvedUploadPaths.delete(this.normalizeApprovedPath(filePath));
+	}
+
+	private normalizeApprovedPath(filePath: string): string {
+		const resolved = path.resolve(filePath);
+		return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+	}
+
+	private async ensureDestinationFolder(
+		folder: string,
+		accessToken: string,
+		tokenKey: string,
+	): Promise<void> {
+		const cached = this.verifiedFolder;
+		if (
+			cached &&
+			cached.folder === folder &&
+			cached.tokenKey === tokenKey &&
+			Date.now() - cached.at < FOLDER_VERIFICATION_TTL_MS
+		) {
+			return;
+		}
+		await verifyDestinationFolder(folder, accessToken);
+		this.verifiedFolder = { folder, tokenKey, at: Date.now() };
 	}
 
 	async getSettings(): Promise<YandexDiskSettings> {
@@ -324,7 +378,11 @@ class YandexDiskService {
 			fs.realpath(this.recordingsDirectory),
 		]);
 		const stats = await fs.stat(resolvedFilePath);
-		if (!stats.isFile() || !isPathWithinDirectory(resolvedFilePath, resolvedRecordingsDirectory)) {
+		const isOpenScreenFile =
+			isPathWithinDirectory(resolvedFilePath, resolvedRecordingsDirectory) ||
+			this.approvedUploadPaths.has(this.normalizeApprovedPath(filePath)) ||
+			this.approvedUploadPaths.has(this.normalizeApprovedPath(resolvedFilePath));
+		if (!stats.isFile() || !isOpenScreenFile) {
 			return { success: false, error: "Only files created by OpenScreen can be uploaded." };
 		}
 
@@ -350,7 +408,15 @@ class YandexDiskService {
 		this.uploadQueue = this.uploadQueue
 			.catch(() => undefined)
 			.then(() =>
-				this.uploadFile(uploadId, resolvedFilePath, fileName, cleanupSourcePaths, settings),
+				this.uploadFile(
+					uploadId,
+					resolvedFilePath,
+					fileName,
+					cleanupSourcePaths,
+					settings,
+					input.keepLocal === true,
+					filePath,
+				),
 			);
 
 		return { success: true, queued: true };
@@ -362,15 +428,21 @@ class YandexDiskService {
 		fileName: string,
 		cleanupSourcePaths: string[],
 		settings: PersistedYandexDiskSettings,
+		keepLocal: boolean,
+		requestedFilePath: string,
 	): Promise<void> {
 		const remotePath = buildYandexDiskRemotePath(settings.folder, fileName);
-		this.broadcast({
-			uploadId,
-			state: "uploading",
-			fileName,
-			remotePath,
-			publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
-		});
+		const reportUploading = (progress: number) =>
+			this.broadcast({
+				uploadId,
+				state: "uploading",
+				fileName,
+				remotePath,
+				publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
+				filePath: requestedFilePath,
+				progress,
+			});
+		reportUploading(0);
 
 		try {
 			const accessToken = this.decryptAccessToken(settings.encryptedAccessToken);
@@ -378,11 +450,19 @@ class YandexDiskService {
 
 			for (let attempt = 0; attempt < 2; attempt += 1) {
 				try {
-					await verifyDestinationFolder(settings.folder, accessToken);
-					const uploadUrl = await getUploadUrl(remotePath, accessToken);
-					await putFile(uploadUrl, filePath);
+					// Independent requests: resolve the upload slot while the folder is checked.
+					const [, uploadUrl] = await Promise.all([
+						this.ensureDestinationFolder(
+							settings.folder,
+							accessToken,
+							settings.encryptedAccessToken ?? "",
+						),
+						getUploadUrl(remotePath, accessToken),
+					]);
+					await putFile(uploadUrl, filePath, reportUploading);
 					break;
 				} catch (error) {
+					this.verifiedFolder = null;
 					if (attempt === 0 && shouldRetry(error)) {
 						await wait(1_000);
 						continue;
@@ -395,7 +475,7 @@ class YandexDiskService {
 			const publicUrl = await publishUploadedFile(remotePath, accessToken);
 			clipboard.writeText(publicUrl);
 			const localDeletion = await this.handleLocalDeletions(
-				[filePath, ...cleanupSourcePaths],
+				keepLocal ? cleanupSourcePaths : [filePath, ...cleanupSourcePaths],
 				remotePath,
 			);
 			this.broadcast({
@@ -404,6 +484,7 @@ class YandexDiskService {
 				fileName,
 				remotePath,
 				publicUrl,
+				filePath: requestedFilePath,
 				localDeletion,
 			});
 			this.notify(
@@ -423,6 +504,7 @@ class YandexDiskService {
 				fileName,
 				remotePath,
 				publicUrl: YANDEX_DISK_PUBLIC_FOLDER_URL,
+				filePath: requestedFilePath,
 				error: message,
 			});
 			this.notify(`Could not publish ${fileName}`, message);
@@ -452,6 +534,7 @@ class YandexDiskService {
 
 	private async handleLocalDeletions(filePaths: string[], remotePath: string) {
 		const uniquePaths = [...new Set(filePaths.map((filePath) => path.resolve(filePath)))];
+		if (uniquePaths.length === 0) return "kept" as const;
 		const results = [];
 		for (const filePath of uniquePaths) {
 			results.push(
@@ -634,6 +717,8 @@ class YandexDiskService {
 export interface YandexDiskIntegration {
 	setEditorActive(active: boolean): void;
 	cleanupPendingLocalFiles(): Promise<void>;
+	approveUploadPath(filePath: string): void;
+	revokeUploadPath(filePath: string): void;
 }
 
 export function registerYandexDiskIpcHandlers(

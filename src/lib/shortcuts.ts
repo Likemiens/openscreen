@@ -126,7 +126,7 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	openApp: "Open App",
 	addZoom: "Add Zoom",
-	addTrim: "Add Trim",
+	addTrim: "Split Clip",
 	addSpeed: "Add Speed",
 	addAnnotation: "Add Annotation",
 	addBlur: "Add Blur",
@@ -154,12 +154,16 @@ export function matchesShortcut(
 	return true;
 }
 
-/** True when the event target is a text-editing surface where shortcuts should not fire. */
+/**
+ * True when the event target takes typed characters itself, so shortcuts should not fire:
+ * text fields, and a focused `<select>`, where a letter jumps to the matching option.
+ */
 export function isTextEditingTarget(target: EventTarget | null): boolean {
 	return (
 		target instanceof HTMLInputElement ||
 		target instanceof HTMLTextAreaElement ||
-		(target instanceof HTMLElement && target.isContentEditable)
+		target instanceof HTMLSelectElement ||
+		(target instanceof HTMLElement && target.isContentEditable === true)
 	);
 }
 

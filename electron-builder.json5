@@ -22,6 +22,9 @@
   "files": [
     "dist",
     "dist-electron",
+    // Vite copies public/ into dist/, but the packaged app reads wallpapers from
+    // resources/wallpapers (extraResources below): do not ship them twice.
+    "!dist/wallpapers",
     "!*.png",
     "!preview*.png",
     "!*.md",

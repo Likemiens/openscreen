@@ -9,6 +9,7 @@ import type {
 	WebcamSizePreset,
 	ZoomRegion,
 } from "@/components/video-editor/types";
+import type { DeviceFrameSettings } from "@/lib/deviceFrame";
 import { BackgroundLoadError } from "@/lib/wallpaper";
 import type { CursorRecordingData } from "@/native/contracts";
 import { getPlatform } from "@/utils/platformUtils";
@@ -44,6 +45,7 @@ interface GifExporterConfig {
 	motionBlurAmount?: number;
 	borderRadius?: number;
 	padding?: number;
+	deviceFrame?: DeviceFrameSettings | null;
 	videoPadding?: number;
 	cropRegion: CropRegion;
 	webcamLayoutPreset?: WebcamLayoutPreset;
@@ -160,6 +162,7 @@ export class GifExporter {
 				motionBlurAmount: this.config.motionBlurAmount,
 				borderRadius: this.config.borderRadius,
 				padding: this.config.padding,
+				deviceFrame: this.config.deviceFrame,
 				cropRegion: this.config.cropRegion,
 				cursorRecordingData: this.config.cursorRecordingData,
 				cursorScale: this.config.cursorScale,

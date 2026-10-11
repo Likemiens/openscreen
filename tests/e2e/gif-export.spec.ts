@@ -13,10 +13,14 @@ const TEST_VIDEO = path.join(__dirname, "../fixtures/sample.webm");
 async function exportFromLoadedVideo(format: "gif" | "mp4"): Promise<Buffer> {
 	const outputPath = path.join(os.tmpdir(), `test-${format}-export-${Date.now()}.${format}`);
 	let testVideoInRecordings = "";
+	// Its own profile: the run then takes no tray, hotkeys or instance lock, and never
+	// touches the recordings of an OpenScreen that is installed on this machine.
+	const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-export-e2e-"));
 
 	const app = await electron.launch({
 		args: [
 			MAIN_JS,
+			`--user-data-dir=${userDataPath}`,
 			// Required in CI sandbox environments (GitHub Actions, Docker, etc.)
 			"--no-sandbox",
 			// Force software WebGL in headless CI to avoid GPU framebuffer errors.
@@ -141,6 +145,11 @@ async function exportFromLoadedVideo(format: "gif" | "mp4"): Promise<Buffer> {
 		}
 		if (testVideoInRecordings && fs.existsSync(testVideoInRecordings)) {
 			fs.unlinkSync(testVideoInRecordings);
+		}
+		try {
+			fs.rmSync(userDataPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+		} catch {
+			// Chromium can keep a cache file locked for a moment; a temp folder is harmless.
 		}
 	}
 }

@@ -1,9 +1,12 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssetBaseUnavailableError, UnsafeAssetPathError } from "./assetPath";
 import {
 	BackgroundLoadError,
 	classifyWallpaper,
 	DEFAULT_WALLPAPER,
+	getWallpaperThumbnailPath,
 	resolveImageWallpaperUrl,
 	UnsafeImagePrefixError,
 	WALLPAPER_COUNT,
@@ -17,6 +20,27 @@ describe("WALLPAPER_PATHS", () => {
 
 	it("DEFAULT_WALLPAPER is WALLPAPER_PATHS[0]", () => {
 		expect(DEFAULT_WALLPAPER).toBe(WALLPAPER_PATHS[0]);
+	});
+
+	it("keeps thumbnails beside the wallpapers, inside the allowed folder", () => {
+		expect(getWallpaperThumbnailPath("/wallpapers/wallpaper7.jpg")).toBe(
+			"/wallpapers/thumbs/wallpaper7.jpg",
+		);
+	});
+
+	// The list is only a count: a wallpaper or thumbnail missing from disk would be a
+	// blank tile in the picker, or a background that silently fails to load.
+	it("ships a file and a thumbnail for every wallpaper, and nothing extra", () => {
+		const publicDir = path.resolve(__dirname, "../../public");
+		for (const wallpaper of WALLPAPER_PATHS) {
+			expect(fs.existsSync(path.join(publicDir, wallpaper)), wallpaper).toBe(true);
+			const thumbnail = getWallpaperThumbnailPath(wallpaper);
+			expect(fs.existsSync(path.join(publicDir, thumbnail)), thumbnail).toBe(true);
+		}
+		const shipped = fs
+			.readdirSync(path.join(publicDir, "wallpapers"))
+			.filter((name) => /^wallpaper\d+\.jpg$/.test(name));
+		expect(shipped).toHaveLength(WALLPAPER_COUNT);
 	});
 });
 

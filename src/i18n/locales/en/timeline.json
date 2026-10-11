@@ -6,7 +6,7 @@
 		"autoZoomOff": "Auto zoom suggestions off — click to suggest zooms from cursor",
 		"autoFocusAllOn": "Auto-Focus on for all zooms — click to switch all to manual",
 		"autoFocusAllOff": "Auto-Focus all zooms (camera follows the cursor)",
-		"addTrim": "Add Trim (T)",
+		"addTrim": "Split at playhead (T)",
 		"addAnnotation": "Add Annotation (A)",
 		"addBlur": "Add Blur (B)",
 		"addSpeed": "Add Speed (S)",
@@ -14,7 +14,7 @@
 	},
 	"hints": {
 		"pressZoom": "Press Z to add zoom",
-		"pressTrim": "Press T to add trim",
+		"pressTrim": "Press T to split the video",
 		"pressAnnotation": "Press A to add annotation",
 		"pressBlur": "Press B to add blur region",
 		"pressSpeed": "Press S to add speed",
@@ -23,7 +23,7 @@
 	"labels": {
 		"pan": "Pan",
 		"zoom": "Zoom",
-		"trim": "Trim",
+		"trim": "Removed",
 		"speed": "Speed",
 		"zoomItem": "Zoom {{index}}",
 		"trimItem": "Trim {{index}}",

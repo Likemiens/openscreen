@@ -15,6 +15,8 @@ describe("editor defaults SSOT", () => {
 		expect(INITIAL_EDITOR_STATE).toMatchObject({
 			...DEFAULT_EDITOR_APPEARANCE_SETTINGS,
 			padding: DEFAULT_EDITOR_LAYOUT_SETTINGS.padding,
+			deviceFrame: DEFAULT_EDITOR_LAYOUT_SETTINGS.deviceFrame,
+			clipSplits: [],
 			aspectRatio: DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio,
 			cropRegion: DEFAULT_EDITOR_LAYOUT_SETTINGS.cropRegion,
 			wallpaper: DEFAULT_EDITOR_LAYOUT_SETTINGS.wallpaper,
@@ -38,6 +40,7 @@ describe("editor defaults SSOT", () => {
 		expect(normalizeProjectEditor({})).toMatchObject({
 			...DEFAULT_EDITOR_APPEARANCE_SETTINGS,
 			padding: DEFAULT_EDITOR_LAYOUT_SETTINGS.padding,
+			deviceFrame: DEFAULT_EDITOR_LAYOUT_SETTINGS.deviceFrame,
 			cropRegion: DEFAULT_EDITOR_LAYOUT_SETTINGS.cropRegion,
 			wallpaper: DEFAULT_EDITOR_LAYOUT_SETTINGS.wallpaper,
 			aspectRatio: DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio,

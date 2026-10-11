@@ -13,6 +13,11 @@ export function WebcamPreview({ deviceId }: WebcamPreviewProps) {
 		let stream: MediaStream | null = null;
 		setError(false);
 
+		if (!navigator.mediaDevices?.getUserMedia) {
+			setError(true);
+			return;
+		}
+
 		void navigator.mediaDevices
 			.getUserMedia({
 				video: deviceId ? { deviceId: { exact: deviceId } } : true,
@@ -49,7 +54,7 @@ export function WebcamPreview({ deviceId }: WebcamPreviewProps) {
 			/>
 			<div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between">
 				<span className="rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white/75 backdrop-blur">
-					Предпросмотр камеры
+					Camera preview
 				</span>
 				<span className="rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-200">
 					PiP
@@ -57,7 +62,7 @@ export function WebcamPreview({ deviceId }: WebcamPreviewProps) {
 			</div>
 			{error ? (
 				<div className="absolute inset-0 flex items-center justify-center bg-[#111318] px-4 text-center text-[10px] leading-relaxed text-white/55">
-					Не удалось показать камеру. Проверьте разрешение Windows.
+					The camera could not be shown. Check the camera permission in system settings.
 				</div>
 			) : null}
 		</div>

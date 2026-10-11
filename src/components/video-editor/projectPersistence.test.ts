@@ -145,6 +145,41 @@ describe("projectPersistence media compatibility", () => {
 		expect(editor.annotationRegions[1].blurData?.blockSize).toBe(4);
 	});
 
+	it("keeps a saved device frame and repairs a damaged one", () => {
+		const saved = {
+			kind: "browser",
+			color: "silver",
+			camera: "hole",
+			cameraSide: "right",
+			orientation: "landscape",
+			fit: "fit",
+		} as const;
+		expect(normalizeProjectEditor({ deviceFrame: saved }).deviceFrame).toEqual(saved);
+		// Projects saved before device frames existed open with no device.
+		expect(normalizeProjectEditor({}).deviceFrame.kind).toBe("none");
+		expect(
+			normalizeProjectEditor({
+				deviceFrame: { kind: "watch", color: 7 },
+			} as unknown as Parameters<typeof normalizeProjectEditor>[0]).deviceFrame,
+		).toEqual({
+			kind: "none",
+			color: "graphite",
+			camera: "island",
+			cameraSide: "left",
+			orientation: "portrait",
+			fit: "fill",
+		});
+	});
+
+	it("keeps the clip's split points in order and drops anything that is not a time", () => {
+		expect(
+			normalizeProjectEditor({
+				clipSplits: [900, 300.4, 300, -5, Number.NaN, "700"],
+			} as unknown as Parameters<typeof normalizeProjectEditor>[0]).clipSplits,
+		).toEqual([300, 900]);
+		expect(normalizeProjectEditor({}).clipSplits).toEqual([]);
+	});
+
 	it("accepts the dual frame webcam layout preset", () => {
 		expect(normalizeProjectEditor({ webcamLayoutPreset: "dual-frame" }).webcamLayoutPreset).toBe(
 			"dual-frame",
@@ -259,7 +294,7 @@ describe("wallpaper legacy normalization", () => {
 
 	it("falls back to default for bundled paths outside WALLPAPER_PATHS", () => {
 		const normalized = normalizeProjectEditor({
-			wallpaper: "file:///opt/Openscreen/resources/wallpapers/wallpaper99.jpg",
+			wallpaper: "file:///opt/Openscreen/resources/wallpapers/wallpaper9999.jpg",
 		});
 		expect(normalized.wallpaper).toBe("/wallpapers/wallpaper1.jpg");
 	});

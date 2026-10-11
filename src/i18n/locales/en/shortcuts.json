@@ -17,7 +17,7 @@
 	"actions": {
 		"openApp": "Open App",
 		"addZoom": "Add Zoom",
-		"addTrim": "Add Trim",
+		"addTrim": "Split Clip",
 		"addSpeed": "Add Speed",
 		"addAnnotation": "Add Annotation",
 		"addBlur": "Add Blur",

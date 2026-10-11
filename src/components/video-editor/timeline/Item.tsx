@@ -1,6 +1,6 @@
 import type { Span } from "dnd-timeline";
 import { useItem } from "dnd-timeline";
-import { Gauge, Maximize, MessageSquare, MousePointer2, Scissors, ZoomIn } from "lucide-react";
+import { Gauge, Maximize, MessageSquare, MousePointer2, Undo2, ZoomIn } from "lucide-react";
 import { useMemo } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,10 @@ interface ItemProps {
 	speedValue?: number;
 	isAutoFocus?: boolean;
 	variant?: "zoom" | "camera-fullscreen" | "trim" | "annotation" | "speed" | "blur";
+	/** Height of the block; the clip row's removed pieces are taller than other items. */
+	height?: number;
+	/** Removed pieces only: puts the piece back into the video. */
+	onRestore?: () => void;
 }
 
 // Map zoom depth to multiplier labels
@@ -51,6 +55,8 @@ export default function Item({
 	speedValue,
 	isAutoFocus = false,
 	variant = "zoom",
+	height = 30,
+	onRestore,
 	children,
 }: ItemProps) {
 	const t = useScopedT("timeline");
@@ -66,24 +72,24 @@ export default function Item({
 	const isSpeed = variant === "speed";
 
 	const glassClass = isZoom
-		? glassStyles.glassGreen
+		? glassStyles.zoom
 		: isCameraFullscreen
-			? glassStyles.glassBlue
+			? glassStyles.camera
 			: isTrim
-				? glassStyles.glassRed
+				? glassStyles.cut
 				: isSpeed
-					? glassStyles.glassAmber
-					: glassStyles.glassYellow;
+					? glassStyles.speed
+					: glassStyles.note;
 
 	const endCapColor = isZoom
-		? "#21916A"
+		? "#0A84FF"
 		: isCameraFullscreen
-			? "#0ea5e9"
+			? "#BF5AF2"
 			: isTrim
-				? "#ef4444"
+				? "#8e8e93"
 				: isSpeed
-					? "#d97706"
-					: "#B4A046";
+					? "#FF9F0A"
+					: "#FFD60A";
 
 	const timeLabel = useMemo(
 		() => `${formatMs(span.start)} – ${formatMs(span.end)}`,
@@ -111,7 +117,7 @@ export default function Item({
 						"w-full h-full overflow-hidden flex items-center justify-center gap-1.5 cursor-grab active:cursor-grabbing relative",
 						isSelected && glassStyles.selected,
 					)}
-					style={{ height: 30, color: "#fff", minWidth: 24 }}
+					style={{ height, color: "#fff", minWidth: 24 }}
 					onClick={(event) => {
 						event.stopPropagation();
 						onSelect?.();
@@ -165,11 +171,26 @@ export default function Item({
 									</span>
 								</>
 							) : isTrim ? (
+								// A removed piece: still there to resize, or to put back.
 								<>
-									<Scissors className="w-3.5 h-3.5 shrink-0" />
-									<span className="text-[11px] font-semibold whitespace-nowrap">
+									<span className="text-[11px] font-semibold whitespace-nowrap text-white/70">
 										{t("labels.trim")}
 									</span>
+									{isSelected && onRestore && (
+										<button
+											type="button"
+											data-testid="clip-restore-button"
+											onPointerDown={(event) => event.stopPropagation()}
+											onClick={(event) => {
+												event.stopPropagation();
+												onRestore();
+											}}
+											className="flex h-5 items-center gap-1 rounded-md bg-white/15 px-1.5 text-[10.5px] font-semibold text-white transition-colors hover:bg-white/25"
+										>
+											<Undo2 className="h-3 w-3" />
+											Restore
+										</button>
+									)}
 								</>
 							) : isSpeed ? (
 								<>

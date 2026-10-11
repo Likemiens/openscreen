@@ -13,12 +13,17 @@ import {
 	systemPreferences,
 	Tray,
 } from "electron";
+import { formatAccelerator } from "../src/lib/appSettings";
 import type { EditorLaunchOptions } from "../src/lib/editorLaunch";
 import { ShortcutBinding } from "../src/lib/shortcuts";
+import { AppSettingsStore } from "./appSettings";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "./diagnostics/main-log-buffer";
 import {
+	isAcceleratorAvailable,
 	loadAndRegisterGlobalShortcut,
 	registerOpenAppShortcut,
+	registerQuickRecordShortcut,
+	suspendQuickRecordShortcut,
 	unregisterAllGlobalShortcuts,
 } from "./globalShortcut";
 import { mainT, setMainLocale } from "./i18n";
@@ -26,13 +31,20 @@ import {
 	registerYandexDiskIpcHandlers,
 	type YandexDiskIntegration,
 } from "./integrations/yandexDisk";
-import { getSelectedDesktopSource, registerIpcHandlers } from "./ipc/handlers";
+import {
+	approveVideoPathForEditor,
+	getSelectedDesktopSource,
+	registerIpcHandlers,
+	selectScreenSourceForDisplay,
+} from "./ipc/handlers";
+import { type QuickCaptureController, registerQuickCaptureIpcHandlers } from "./ipc/quickCapture";
 import { acquireStableInstanceLock } from "./singleInstanceLock";
 import {
 	createCountdownOverlayWindow,
 	createEditorWindow,
 	createHudOverlayWindow,
 	createSourceSelectorWindow,
+	getHudOverlayWindow,
 } from "./windows";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,11 +81,24 @@ if (process.platform === "linux") {
 
 export const RECORDINGS_DIR = path.join(app.getPath("userData"), "recordings");
 
+// Passed by the login item so the app starts straight into the tray.
+const START_HIDDEN_ARG = "--hidden";
+const launchedHidden = process.argv.includes(START_HIDDEN_ARG);
+
+// The tray keeps the app (and its record hotkey) alive with no window open. Linux
+// trays are unreliable across desktops, so there closing the last window still quits.
+const staysInTray = process.platform !== "linux";
+
+// How long a hidden, idle HUD keeps its renderer before the window is released. The
+// HUD is rebuilt from persisted settings on the next hotkey press or tray click.
+const HUD_IDLE_RELEASE_MS =
+	Number(process.env["OPENSCREEN_HUD_IDLE_RELEASE_MS"]) > 0
+		? Number(process.env["OPENSCREEN_HUD_IDLE_RELEASE_MS"])
+		: 60_000;
+
 async function ensureRecordingsDir() {
 	try {
 		await fs.mkdir(RECORDINGS_DIR, { recursive: true });
-		console.log("RECORDINGS_DIR:", RECORDINGS_DIR);
-		console.log("User Data Path:", app.getPath("userData"));
 	} catch (error) {
 		console.error("Failed to create recordings directory:", error);
 	}
@@ -105,6 +130,14 @@ let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
+let isRecording = false;
+let isQuitting = false;
+// The HUD reports work that must not be interrupted (finishing or uploading a clip).
+let hudBusy = false;
+let hudIdleReleaseTimer: NodeJS.Timeout | null = null;
+let quickCapture: QuickCaptureController | null = null;
+let activeQuickRecordShortcut: string | null = null;
+const appSettings = new AppSettingsStore(app.getPath("userData"));
 const isMac = process.platform === "darwin";
 const trayIconSize = isMac ? 16 : 24;
 
@@ -112,12 +145,34 @@ const trayIconSize = isMac ? 16 : 24;
 const defaultTrayIcon = getTrayIcon("openscreen.png", trayIconSize);
 const recordingTrayIcon = getTrayIcon("rec-button.png", trayIconSize);
 
-function createWindow() {
+function attachHudLifecycle(win: BrowserWindow) {
+	win.on("hide", scheduleHudIdleRelease);
+	win.on("show", cancelHudIdleRelease);
+	win.on("closed", () => {
+		cancelHudIdleRelease();
+		hudBusy = false;
+		quickCapture?.handleHudClosed();
+		if (mainWindow === win) mainWindow = null;
+		// The HUD owns the recording controls. If it went away while recording (replaced
+		// by Studio from the app menu, or a renderer crash), nothing can stop that
+		// recording any more, so stop treating the app as recording: otherwise the
+		// hotkey would keep sending "stop" to a window that no longer exists.
+		if (isRecording) {
+			isRecording = false;
+			updateTrayMenu(false);
+		}
+	});
+}
+
+function createWindow(options: { startHidden?: boolean } = {}) {
 	if (mainWindow && !mainWindow.isDestroyed()) {
 		return;
 	}
 
-	mainWindow = createHudOverlayWindow();
+	const win = createHudOverlayWindow(options);
+	mainWindow = win;
+	attachHudLifecycle(win);
+	if (options.startHidden) scheduleHudIdleRelease();
 }
 
 function showMainWindow() {
@@ -133,7 +188,115 @@ function showMainWindow() {
 	createWindow();
 }
 
-const stableInstanceLock = acquireStableInstanceLock();
+function cancelHudIdleRelease() {
+	if (hudIdleReleaseTimer) {
+		clearTimeout(hudIdleReleaseTimer);
+		hudIdleReleaseTimer = null;
+	}
+}
+
+/**
+ * A hidden HUD still costs a whole renderer process. Once it has sat idle in the tray
+ * for a while, drop the window; the tray and hotkey bring a fresh one back on demand.
+ */
+function scheduleHudIdleRelease() {
+	cancelHudIdleRelease();
+	if (!staysInTray) return;
+
+	hudIdleReleaseTimer = setTimeout(() => {
+		hudIdleReleaseTimer = null;
+		const hud = getHudOverlayWindow();
+		if (!hud || hud.isVisible()) return;
+		// Hidden but still working (recording, finishing a clip, picking an area): check back.
+		if (isRecording || hudBusy || quickCapture?.isRegionSelectorOpen()) {
+			scheduleHudIdleRelease();
+			return;
+		}
+		hud.destroy();
+	}, HUD_IDLE_RELEASE_MS);
+}
+
+function hideHudToTray() {
+	const hud = getHudOverlayWindow();
+	if (hud) hud.hide();
+}
+
+/**
+ * The first time the recorder is closed, say that it is still running: an app that
+ * silently stays in the tray otherwise looks like it quit (or like it won't quit).
+ */
+function showTrayHintOnce() {
+	if (HEADLESS) return;
+	if (appSettings.get().trayHintShown || !Notification.isSupported()) return;
+	void appSettings.update({ trayHintShown: true });
+
+	const shortcutLabel = formatAccelerator(activeQuickRecordShortcut, process.platform);
+	new Notification({
+		title: "OpenScreen is still running",
+		body: shortcutLabel
+			? `It waits in the tray. Press ${shortcutLabel} to record, or right-click the tray icon to quit.`
+			: "It waits in the tray. Right-click the tray icon to record or quit.",
+	}).show();
+}
+
+/** The record hotkey: stops a running recording, otherwise starts a new capture. */
+function handleQuickRecordShortcut() {
+	if (isRecording) {
+		const hud = getHudOverlayWindow();
+		if (hud) hud.webContents.send("stop-recording-from-tray");
+		return;
+	}
+	// While Studio is open the main window is the editor; leave it alone.
+	if (mainWindow && !mainWindow.isDestroyed() && isEditorWindow(mainWindow)) {
+		mainWindow.show();
+		mainWindow.focus();
+		return;
+	}
+
+	requestHudCapture("quick-record");
+}
+
+/**
+ * Hands a capture request to the HUD without forcing it on screen: an area capture
+ * goes straight to the area picker, so the HUD decides when it needs to be visible.
+ */
+function requestHudCapture(command: "quick-record" | "record-area") {
+	if (!getHudOverlayWindow()) {
+		createWindow({ startHidden: true });
+	}
+	// createWindow does nothing while another main window (Studio) is still up.
+	if (!getHudOverlayWindow()) return;
+	quickCapture?.sendHudCommand(command);
+}
+
+// A headless run with its own profile (tests, background checks) has to stay out of the
+// way of whoever is using the machine, and of a real OpenScreen that may be running
+// beside it: it takes no machine-wide lock, shows no tray icon and grabs no global
+// hotkeys. (Electron's own instance lock is per profile, so it does not collide either.)
+// Both conditions are required, so a stray HEADLESS variable in someone's environment
+// cannot leave a normally launched app without its tray icon.
+const HEADLESS = process.env["HEADLESS"] === "true" && app.commandLine.hasSwitch("user-data-dir");
+
+function applyQuickRecordShortcut(preferred: string | null) {
+	activeQuickRecordShortcut = HEADLESS
+		? null
+		: registerQuickRecordShortcut(preferred, handleQuickRecordShortcut);
+	updateTrayMenu(isRecording);
+	return activeQuickRecordShortcut;
+}
+
+function applyLaunchAtLogin(enabled: boolean) {
+	// A dev build would register electron.exe itself as the login item.
+	if (!app.isPackaged) return;
+	app.setLoginItemSettings({
+		openAtLogin: enabled,
+		args: enabled ? [START_HIDDEN_ARG] : [],
+	});
+}
+
+const stableInstanceLock = HEADLESS
+	? { lockDir: "", release: () => undefined }
+	: acquireStableInstanceLock();
 const hasElectronSingleInstanceLock = app.requestSingleInstanceLock();
 const hasSingleInstanceLock = Boolean(stableInstanceLock && hasElectronSingleInstanceLock);
 
@@ -322,6 +485,7 @@ function setupApplicationMenu() {
 }
 
 function createTray() {
+	if (HEADLESS) return;
 	tray = new Tray(defaultTrayIcon);
 	tray.on("click", () => {
 		showMainWindow();
@@ -344,15 +508,20 @@ function getTrayIcon(filename: string, size: number) {
 function updateTrayMenu(recording: boolean = false) {
 	if (!tray) return;
 	const trayIcon = recording ? recordingTrayIcon : defaultTrayIcon;
+	const idleShortcutLabel = formatAccelerator(activeQuickRecordShortcut, process.platform);
 	const trayToolTip = recording
 		? mainT("common", "actions.recordingStatus", {
 				source: selectedSourceName,
 			}) || `Recording: ${selectedSourceName}`
-		: "OpenScreen";
-	const menuTemplate = recording
+		: idleShortcutLabel
+			? `OpenScreen — ${idleShortcutLabel} to record`
+			: "OpenScreen";
+	const shortcutLabel = formatAccelerator(activeQuickRecordShortcut, process.platform);
+	const shortcutHint = shortcutLabel ? `  (${shortcutLabel})` : "";
+	const menuTemplate: Electron.MenuItemConstructorOptions[] = recording
 		? [
 				{
-					label: mainT("common", "actions.stopRecording") || "Stop Recording",
+					label: `${mainT("common", "actions.stopRecording") || "Stop Recording"}${shortcutHint}`,
 					click: () => {
 						if (mainWindow && !mainWindow.isDestroyed()) {
 							mainWindow.webContents.send("stop-recording-from-tray");
@@ -362,11 +531,23 @@ function updateTrayMenu(recording: boolean = false) {
 			]
 		: [
 				{
+					label: `Record Area…${shortcutHint}`,
+					click: () => {
+						if (mainWindow && !mainWindow.isDestroyed() && isEditorWindow(mainWindow)) {
+							mainWindow.show();
+							mainWindow.focus();
+							return;
+						}
+						requestHudCapture("record-area");
+					},
+				},
+				{
 					label: mainT("common", "actions.open") || "Open",
 					click: () => {
 						showMainWindow();
 					},
 				},
+				{ type: "separator" },
 				{
 					label: mainT("common", "actions.quit") || "Quit",
 					click: () => {
@@ -416,7 +597,16 @@ function createEditorWindowWrapper(options: EditorLaunchOptions = {}) {
 		isForceClosing = false;
 		mainWindow = null;
 	}
-	mainWindow = createEditorWindow(options);
+	const editorWindow = createEditorWindow(options);
+	mainWindow = editorWindow;
+	editorWindow.on("closed", () => {
+		// Replaced by another window (e.g. Return to Recorder): nothing to clean up here.
+		if (mainWindow !== editorWindow) return;
+		mainWindow = null;
+		yandexDiskIntegration?.setEditorActive(false);
+		// Studio was closed outright, which leaves the app in the tray.
+		if (staysInTray && !isQuitting) showTrayHintOnce();
+	});
 	yandexDiskIntegration?.setEditorActive(true);
 	editorHasUnsavedChanges = false;
 
@@ -425,6 +615,16 @@ function createEditorWindowWrapper(options: EditorLaunchOptions = {}) {
 
 		event.preventDefault();
 		isCloseConfirmInFlight = true;
+
+		// Preventing the close also cancels a quit in progress. Remember that one was
+		// asked for, so Save/Discard can finish it, and clear the flag so that a Cancel
+		// does not leave the tray-resident app quitting the next time its windows close.
+		const quitAfterClose = isQuitting;
+		isQuitting = false;
+		const closeAndMaybeQuit = (target: BrowserWindow) => {
+			forceCloseEditorWindow(target);
+			if (quitAfterClose) setImmediate(() => app.quit());
+		};
 
 		const windowToClose = mainWindow;
 		if (!windowToClose || windowToClose.isDestroyed()) return;
@@ -443,18 +643,18 @@ function createEditorWindowWrapper(options: EditorLaunchOptions = {}) {
 				ipcMain.once("save-before-close-done", (event, shouldClose: boolean) => {
 					if (event.sender.id !== windowToClose?.webContents.id) return;
 					if (!shouldClose) return;
-					forceCloseEditorWindow(windowToClose);
+					closeAndMaybeQuit(windowToClose);
 				});
 			} else if (choice === "discard") {
-				forceCloseEditorWindow(windowToClose);
+				closeAndMaybeQuit(windowToClose);
 			}
 			// "cancel": flag reset, window stays open
 		});
 	});
 }
 
-function createSourceSelectorWindowWrapper() {
-	sourceSelectorWindow = createSourceSelectorWindow();
+function createSourceSelectorWindowWrapper(tab?: "screens" | "windows") {
+	sourceSelectorWindow = createSourceSelectorWindow(tab);
 	sourceSelectorWindow.on("closed", () => {
 		sourceSelectorWindow = null;
 		if (mainWindow && !mainWindow.isDestroyed()) {
@@ -479,7 +679,15 @@ function createCountdownOverlayWindowWrapper() {
 // Closing every window quits the app (tray goes too). The in-app "Return to Recorder"
 // button covers the editor-to-HUD round-trip, so closing the last window means "I'm done".
 app.on("window-all-closed", () => {
-	app.quit();
+	// With no window left the app keeps running in the tray, so the record hotkey stays
+	// live and the next capture starts instantly. Quitting is explicit (tray or HUD menu).
+	if (!staysInTray || isQuitting) {
+		app.quit();
+	}
+});
+
+app.on("before-quit", () => {
+	isQuitting = true;
 });
 
 app.on("activate", () => {
@@ -499,6 +707,7 @@ app.on("activate", () => {
 });
 
 app.on("will-quit", () => {
+	quickCapture?.abortOpenOutputs();
 	unregisterAllGlobalShortcuts();
 	stableInstanceLock?.release();
 });
@@ -569,8 +778,28 @@ appReady?.then(async () => {
 		}
 	}
 
+	// Closing the HUD keeps the recorder one hotkey away; Quit lives in its menu.
 	ipcMain.on("hud-overlay-close", () => {
-		app.quit();
+		if (staysInTray) {
+			hideHudToTray();
+			showTrayHintOnce();
+		} else {
+			app.quit();
+		}
+	});
+	ipcMain.on("hud-overlay-show", () => {
+		const hud = getHudOverlayWindow();
+		if (hud) {
+			hud.show();
+			hud.focus();
+		}
+	});
+	ipcMain.on("hud-set-busy", (_, busy: boolean) => {
+		hudBusy = busy === true;
+		if (!hudBusy) {
+			const hud = getHudOverlayWindow();
+			if (hud && !hud.isVisible()) scheduleHudIdleRelease();
+		}
 	});
 	ipcMain.handle("set-locale", (_, locale: string) => {
 		setMainLocale(locale);
@@ -579,7 +808,8 @@ appReady?.then(async () => {
 	});
 	ipcMain.handle("finish-background-publish", (_, error?: string, savedPath?: string) => {
 		const backgroundEditor = mainWindow;
-		mainWindow = createHudOverlayWindow({ startHidden: true });
+		mainWindow = null;
+		createWindow({ startHidden: true });
 		yandexDiskIntegration?.setEditorActive(false);
 		editorHasUnsavedChanges = false;
 		if (Notification.isSupported() && (error || savedPath)) {
@@ -599,19 +829,46 @@ appReady?.then(async () => {
 	});
 
 	ipcMain.handle("update-global-shortcut", (_, binding: ShortcutBinding) => {
-		const success = registerOpenAppShortcut(binding, showMainWindow);
+		const success = HEADLESS || registerOpenAppShortcut(binding, showMainWindow);
 		return { success };
 	});
 
 	createTray();
 	updateTrayMenu();
 	setupApplicationMenu();
-	await ensureRecordingsDir();
-	yandexDiskIntegration = registerYandexDiskIpcHandlers(
+	const yandexDisk = registerYandexDiskIpcHandlers(
 		ipcMain,
 		RECORDINGS_DIR,
 		app.getPath("userData"),
 	);
+	yandexDiskIntegration = yandexDisk;
+
+	quickCapture = registerQuickCaptureIpcHandlers(ipcMain, {
+		settings: appSettings,
+		recordingsDir: RECORDINGS_DIR,
+		getHudWindow: getHudOverlayWindow,
+		showHud: showMainWindow,
+		hideHud: hideHudToTray,
+		applyQuickRecordShortcut,
+		getActiveQuickRecordShortcut: () => activeQuickRecordShortcut,
+		isAcceleratorAvailable,
+		applyLaunchAtLogin,
+		canLaunchAtLogin: () => app.isPackaged,
+		setShortcutCaptureActive: (active) => {
+			if (active) {
+				suspendQuickRecordShortcut();
+				activeQuickRecordShortcut = null;
+			} else {
+				applyQuickRecordShortcut(appSettings.get().quickRecordShortcut);
+			}
+		},
+		selectScreenSourceForDisplay,
+		approveClipPath: (filePath) => {
+			yandexDisk.approveUploadPath(filePath);
+			approveVideoPathForEditor(filePath);
+		},
+		revokeClipPath: (filePath) => yandexDisk.revokeUploadPath(filePath),
+	});
 
 	function switchToHudWrapper() {
 		if (mainWindow) {
@@ -633,16 +890,31 @@ appReady?.then(async () => {
 		() => countdownOverlayWindow,
 		(recording: boolean, sourceName: string) => {
 			selectedSourceName = sourceName;
+			isRecording = recording;
 			if (!tray) createTray();
 			updateTrayMenu(recording);
 			if (!recording) {
+				quickCapture?.hideRegionFrame();
 				showMainWindow();
 			}
 		},
 		switchToHudWrapper,
 	);
 
-	await loadAndRegisterGlobalShortcut(showMainWindow);
+	// Show the recorder first; everything below only has to be ready before first use.
+	// Login-item arguments are Windows-only, so macOS is asked whether this is a login
+	// launch instead.
+	const startInTray =
+		launchedHidden ||
+		(process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin === true);
+	if (!startInTray) {
+		createWindow();
+	}
 
-	createWindow();
+	await Promise.all([ensureRecordingsDir(), appSettings.load()]);
+	if (!HEADLESS) await loadAndRegisterGlobalShortcut(showMainWindow);
+	applyQuickRecordShortcut(appSettings.get().quickRecordShortcut);
+	if (app.isPackaged) {
+		applyLaunchAtLogin(appSettings.get().launchAtLogin);
+	}
 });

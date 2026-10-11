@@ -7,13 +7,12 @@ import {
 	YANDEX_DISK_PUBLIC_FOLDER_URL,
 	type YandexDiskSettings,
 } from "@/lib/yandexDisk";
-import styles from "./LaunchWindow.module.css";
+import hud from "./hud.module.css";
 
 interface YandexDiskSettingsPanelProps {
 	open: boolean;
 	settings: YandexDiskSettings | null;
 	isRussian: boolean;
-	bottomOffset: number;
 	onClose: () => void;
 	onSettingsChange: (settings: YandexDiskSettings) => void;
 }
@@ -27,7 +26,8 @@ const COPY = {
 		folder: "Folder in your Yandex Disk root",
 		openFolder: "Open shared folder",
 		deleteLocal: "Delete the local recording after upload",
-		deleteHint: "Deletion waits until Yandex confirms the file and you leave the editor.",
+		deleteHint:
+			"Applies to Studio exports, after Yandex confirms the file. Clips saved to your folder are always kept.",
 		token: "OAuth token",
 		tokenHint:
 			"Use cloud_api:disk.read and cloud_api:disk.write. The token is encrypted by the operating system.",
@@ -46,7 +46,8 @@ const COPY = {
 		folder: "Папка в корне Яндекс Диска",
 		openFolder: "Открыть общую папку",
 		deleteLocal: "Удалять локальную запись после загрузки",
-		deleteHint: "Удаление произойдёт только после проверки файла и выхода из редактора.",
+		deleteHint:
+			"Относится к экспорту из Studio, после проверки файла. Клипы в вашей папке не удаляются.",
 		token: "OAuth-токен",
 		tokenHint:
 			"Выберите cloud_api:disk.read и cloud_api:disk.write. Токен шифруется операционной системой.",
@@ -60,10 +61,7 @@ const COPY = {
 } as const;
 
 export const YandexDiskSettingsPanel = forwardRef<HTMLDivElement, YandexDiskSettingsPanelProps>(
-	function YandexDiskSettingsPanel(
-		{ open, settings, isRussian, bottomOffset, onClose, onSettingsChange },
-		ref,
-	) {
+	function YandexDiskSettingsPanel({ open, settings, isRussian, onClose, onSettingsChange }, ref) {
 		const copy = isRussian ? COPY.ru : COPY.en;
 		const [folder, setFolder] = useState(DEFAULT_YANDEX_DISK_FOLDER);
 		const [deleteLocalAfterUpload, setDeleteLocalAfterUpload] = useState(true);
@@ -149,8 +147,7 @@ export const YandexDiskSettingsPanel = forwardRef<HTMLDivElement, YandexDiskSett
 			<div
 				ref={ref}
 				data-hud-interactive="true"
-				className={`fixed left-1/2 z-40 w-[360px] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#0b0c10]/95 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl ${styles.electronNoDrag}`}
-				style={{ bottom: bottomOffset }}
+				className={`${hud.panel} ${hud.materialize} ${hud.noDrag} w-[360px] p-4 text-white`}
 				onPointerDown={(event) => event.stopPropagation()}
 			>
 				<div className="flex items-start justify-between gap-4">

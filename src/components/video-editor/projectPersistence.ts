@@ -1,6 +1,7 @@
 import { normalizeTextAnimation } from "@/lib/annotationTextAnimation";
 import { normalizeBlurColor, normalizeBlurType } from "@/lib/blurEffects";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
+import { type DeviceFrameSettings, normalizeDeviceFrame } from "@/lib/deviceFrame";
 import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
 import type { ProjectMedia } from "@/lib/recordingSession";
 import { normalizeProjectMedia } from "@/lib/recordingSession";
@@ -13,6 +14,7 @@ import {
 	DEFAULT_GIF_SETTINGS,
 	DEFAULT_WEBCAM_SETTINGS,
 } from "./editorDefaults";
+import { normalizeClipSplits } from "./timeline/clipPieces";
 import {
 	type AnnotationRegion,
 	type CameraFullscreenRegion,
@@ -73,12 +75,14 @@ export interface ProjectEditorState {
 	motionBlurAmount: number;
 	borderRadius: number;
 	padding: number;
+	deviceFrame: DeviceFrameSettings;
 	cropRegion: CropRegion;
 	zoomRegions: ZoomRegion[];
 	cameraFullscreenRegions: CameraFullscreenRegion[];
 	autoZoomEnabled: boolean;
 	autoFocusAll: boolean;
 	trimRegions: TrimRegion[];
+	clipSplits: number[];
 	speedRegions: SpeedRegion[];
 	annotationRegions: AnnotationRegion[];
 	aspectRatio: AspectRatio;
@@ -499,6 +503,8 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		padding: isFiniteNumber(editor.padding)
 			? clamp(editor.padding, 0, 100)
 			: DEFAULT_EDITOR_LAYOUT_SETTINGS.padding,
+		// Projects saved before device mockups existed simply have no frame.
+		deviceFrame: normalizeDeviceFrame(editor.deviceFrame),
 		cropRegion: {
 			x: cropX,
 			y: cropY,
@@ -512,6 +518,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		autoZoomEnabled: typeof editor.autoZoomEnabled === "boolean" ? editor.autoZoomEnabled : true,
 		autoFocusAll: typeof editor.autoFocusAll === "boolean" ? editor.autoFocusAll : false,
 		trimRegions: normalizedTrimRegions,
+		clipSplits: normalizeClipSplits(editor.clipSplits),
 		speedRegions: normalizedSpeedRegions,
 		annotationRegions: normalizedAnnotationRegions,
 		aspectRatio: normalizedAspectRatio,

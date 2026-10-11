@@ -47,6 +47,38 @@ describe("findDominantRegion — auto-zoom cursor following", () => {
 		expect(mid.region?.focus.cx).not.toBeCloseTo(baseRegion.focus.cx, 2);
 	});
 
+	it("aims at where the cursor is on the stage, not at its position inside the video", () => {
+		// The recording sits in a narrow column of the stage, as inside a phone mockup.
+		const cursorFrame = { x: 0.4, y: 0.1, width: 0.2, height: 0.8 };
+		const mid = findDominantRegion([baseRegion], 2000, {
+			cursorTelemetry: movingTelemetry,
+			cursorFrame,
+		});
+		// Cursor at the middle of the video is at the middle of that column.
+		expect(mid.region?.focus.cx).toBeCloseTo(0.5, 5);
+
+		const late = findDominantRegion([baseRegion], 3800, {
+			cursorTelemetry: movingTelemetry,
+			cursorFrame,
+		});
+		// Near the video's right edge it is still inside the column (0.4–0.6 of the stage),
+		// where an unmapped focus would have run off to 0.88.
+		expect(late.region?.focus.cx).toBeGreaterThan(0.5);
+		expect(late.region?.focus.cx).toBeLessThan(0.6);
+	});
+
+	it("follows a change of layout rather than serving the previous answer", () => {
+		const wide = findDominantRegion([baseRegion], 3800, {
+			cursorTelemetry: movingTelemetry,
+			cursorFrame: { x: 0, y: 0, width: 1, height: 1 },
+		});
+		const narrow = findDominantRegion([baseRegion], 3800, {
+			cursorTelemetry: movingTelemetry,
+			cursorFrame: { x: 0.4, y: 0, width: 0.2, height: 1 },
+		});
+		expect(narrow.region?.focus.cx).not.toBeCloseTo(wide.region?.focus.cx ?? 0, 2);
+	});
+
 	it("stays frozen at the static focus when focusMode is not auto (manual regions unaffected)", () => {
 		const manualRegion: ZoomRegion = { ...baseRegion, focusMode: "manual", source: "manual" };
 

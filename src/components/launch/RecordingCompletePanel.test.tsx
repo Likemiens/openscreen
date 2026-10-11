@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { RecordingCompletePanel } from "./RecordingCompletePanel";
 
 const baseProps = {
-	draft: { filePath: "C:\\recordings\\recording.webm", title: "Product demo" },
+	draft: {
+		filePath: "C:\\recordings\\recording.webm",
+		title: "Product demo",
+		exportOptions: { quality: "good" as const, frameRate: 60 as const },
+		quickClip: false,
+		region: null,
+	},
 	yandexConnected: true,
 	onTitleChange: vi.fn(),
 	onPublish: vi.fn(),
@@ -45,6 +51,25 @@ describe("RecordingCompletePanel", () => {
 		await user.click(screen.getByRole("button", { name: "Publish & get link" }));
 
 		expect(onPublish).toHaveBeenCalledWith({ quality: "good", frameRate: 60 });
+	});
+
+	it("starts with the export settings captured by the active recipe", async () => {
+		const user = userEvent.setup();
+		const onPublish = vi.fn();
+
+		render(
+			<RecordingCompletePanel
+				{...baseProps}
+				draft={{
+					...baseProps.draft,
+					exportOptions: { quality: "source", frameRate: 30 },
+				}}
+				onPublish={onPublish}
+			/>,
+		);
+		await user.click(screen.getByRole("button", { name: "Publish & get link" }));
+
+		expect(onPublish).toHaveBeenCalledWith({ quality: "source", frameRate: 30 });
 	});
 
 	it("opens setup instead of publishing when Yandex Disk is disconnected", async () => {

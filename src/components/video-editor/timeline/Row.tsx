@@ -6,19 +6,32 @@ interface RowProps extends RowDefinition {
 	hint?: string;
 	isEmpty?: boolean;
 	background?: React.ReactNode;
+	/** Rows are 36 px tall; the clip row is taller so the video reads as the main track. */
+	minHeight?: number;
+	/** Marks the row for pointer handling, e.g. "clip". */
+	kind?: string;
 }
 
 /**
  * A horizontal timeline lane. Wraps dnd-timeline's `useRow` and adds an optional
  * `background` layer, an empty-state hint label, and a minimum height.
  */
-export default function Row({ id, children, hint, isEmpty, background }: RowProps) {
+export default function Row({
+	id,
+	children,
+	hint,
+	isEmpty,
+	background,
+	minHeight = 36,
+	kind,
+}: RowProps) {
 	const { setNodeRef, rowWrapperStyle, rowStyle } = useRow({ id });
 
 	return (
 		<div
-			className="border-b border-white/[0.055] bg-[#101116] relative overflow-hidden"
-			style={{ ...rowWrapperStyle, minHeight: 36 }}
+			data-timeline-row={kind}
+			className="border-b border-white/[0.055] bg-[#1e1e20] relative overflow-hidden"
+			style={{ ...rowWrapperStyle, minHeight }}
 		>
 			{background}
 			{isEmpty && hint && (

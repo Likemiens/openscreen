@@ -3,6 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
+import type { CaptureRegion } from "@/lib/captureRegion";
+import {
+	type CaptureMode,
+	loadCaptureSettings,
+	resolveEffectiveCapture,
+	saveCaptureSettings,
+} from "@/lib/captureSettings";
 import type { ExportQuality, Mp4FrameRate } from "@/lib/exporter";
 import {
 	type NativeMacRecordingRequest,
@@ -13,11 +20,16 @@ import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
+import { canFinalizeQuickClip } from "@/lib/quickClip";
 import {
 	buildPublishedFileName,
 	createDefaultRecordingTitle,
 	sanitizeRecordingTitle,
 } from "@/lib/recordingDraft";
+import {
+	createRecordingCountdownSequence,
+	type RecordingCountdownSeconds,
+} from "@/lib/recordingRecipes";
 import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
@@ -57,6 +69,14 @@ const WEBCAM_TARGET_FRAME_RATE = 30;
 export interface CompletedRecordingDraft {
 	filePath: string;
 	title: string;
+	exportOptions: CompletedRecordingExportOptions;
+	/**
+	 * True when the recording is already complete as filmed (cursor in the frames, no
+	 * webcam track to composite) and can be saved straight away without Studio.
+	 */
+	quickClip: boolean;
+	/** The area to crop to when the recording was an area capture. */
+	region: CaptureRegion | null;
 }
 
 export interface CompletedRecordingExportOptions {
@@ -68,7 +88,17 @@ type UseScreenRecorderReturn = {
 	recording: boolean;
 	paused: boolean;
 	saving: boolean;
+	/** True from the moment a capture is requested until it is running (no countdown). */
+	starting: boolean;
 	elapsedSeconds: number;
+	countdownSeconds: RecordingCountdownSeconds;
+	setCountdownSeconds: (seconds: RecordingCountdownSeconds) => void;
+	captureMode: CaptureMode;
+	setCaptureMode: (mode: CaptureMode) => void;
+	captureRegion: CaptureRegion | null;
+	setCaptureRegion: (region: CaptureRegion | null) => void;
+	defaultExportOptions: CompletedRecordingExportOptions;
+	setDefaultExportOptions: (options: CompletedRecordingExportOptions) => void;
 	toggleRecording: () => void;
 	togglePaused: () => void;
 	canPauseRecording: boolean;
@@ -93,6 +123,10 @@ type UseScreenRecorderReturn = {
 	softwareEncoderFallbackNoticeVisible: boolean;
 	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
 	completedRecording: CompletedRecordingDraft | null;
+	/** Drops the finished-recording draft, e.g. once it has been saved as a clip. */
+	clearCompletedRecording: () => void;
+	/** Sends a draft to the Studio flow when it could not be saved as a quick clip. */
+	demoteCompletedRecordingToDraft: () => void;
 	setCompletedRecordingTitle: (title: string) => void;
 	openCompletedRecordingInEditor: (options: CompletedRecordingExportOptions) => Promise<void>;
 	publishCompletedRecording: (options: CompletedRecordingExportOptions) => Promise<void>;
@@ -118,24 +152,60 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		import.meta.env.DEV && !window.electronAPI
 			? new URLSearchParams(window.location.search).get("preview")
 			: null;
+	// The HUD window is released while idle in the tray, so the last-used setup is
+	// restored from storage rather than starting from defaults every time it reopens.
+	const [initialSettings] = useState(loadCaptureSettings);
 	const [recording, setRecording] = useState(browserPreview === "recording");
 	const [paused, setPaused] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [elapsedSeconds, setElapsedSeconds] = useState(browserPreview === "recording" ? 65 : 0);
-	const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
-	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(undefined);
-	const [microphoneDeviceName, setMicrophoneDeviceName] = useState<string | undefined>(undefined);
-	const [webcamDeviceId, setWebcamDeviceId] = useState<string | undefined>(undefined);
-	const [webcamDeviceName, setWebcamDeviceName] = useState<string | undefined>(undefined);
-	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
-	const [webcamEnabled, setWebcamEnabledState] = useState(false);
-	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("editable-overlay");
+	const [countdownSeconds, setCountdownSeconds] = useState<RecordingCountdownSeconds>(
+		initialSettings.countdownSeconds,
+	);
+	const [defaultExportOptions, setDefaultExportOptions] = useState<CompletedRecordingExportOptions>(
+		{ quality: initialSettings.quality, frameRate: initialSettings.frameRate },
+	);
+	const [captureMode, setCaptureMode] = useState<CaptureMode>(initialSettings.mode);
+	const [captureRegion, setCaptureRegion] = useState<CaptureRegion | null>(initialSettings.region);
+	const [microphoneEnabled, setMicrophoneEnabled] = useState(initialSettings.microphoneEnabled);
+	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(
+		initialSettings.microphoneDeviceId,
+	);
+	const [microphoneDeviceName, setMicrophoneDeviceName] = useState<string | undefined>(
+		initialSettings.microphoneDeviceName,
+	);
+	const [webcamDeviceId, setWebcamDeviceId] = useState<string | undefined>(
+		initialSettings.webcamDeviceId,
+	);
+	const [webcamDeviceName, setWebcamDeviceName] = useState<string | undefined>(
+		initialSettings.webcamDeviceName,
+	);
+	const [systemAudioEnabled, setSystemAudioEnabled] = useState(initialSettings.systemAudioEnabled);
+	// The camera and cursor *preferences*. What a capture really uses is derived below,
+	// because area mode overrides both without forgetting them.
+	const [webcamPreference, setWebcamEnabledState] = useState(false);
+	const [cursorPreference, setCursorCaptureMode] = useState<CursorCaptureMode>(
+		initialSettings.cursorCaptureMode,
+	);
+	const { webcamEnabled, cursorCaptureMode } = resolveEffectiveCapture({
+		mode: captureMode,
+		webcamEnabled: webcamPreference,
+		cursorCaptureMode: cursorPreference,
+	});
+	const [starting, setStarting] = useState(false);
+	const startingRef = useRef(false);
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
 	const [completedRecording, setCompletedRecording] = useState<CompletedRecordingDraft | null>(
 		() =>
 			browserPreview === "draft"
-				? { filePath: "C:\\OpenScreen\\recording.webm", title: "Product walkthrough" }
+				? {
+						filePath: "C:\\OpenScreen\\recording.webm",
+						title: "Product walkthrough",
+						exportOptions: { quality: "good", frameRate: 60 },
+						quickClip: false,
+						region: null,
+					}
 				: null,
 	);
 	const screenRecorder = useRef<RecorderHandle | null>(null);
@@ -158,6 +228,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [countdownActive, setCountdownActive] = useState(false);
 	const webcamReady = useRef(false);
 	const webcamAcquireId = useRef(0);
+	// Captured when a recording starts: the HUD setup may change before it finishes, and
+	// the finished recording must be described by what it was actually filmed with.
+	const activeRegion = useRef<CaptureRegion | null>(null);
+	const activeSetup = useRef<{
+		cursorCaptureMode: CursorCaptureMode;
+		exportOptions: CompletedRecordingExportOptions;
+	} | null>(null);
 	const canPauseRecording =
 		recording &&
 		Boolean(
@@ -172,13 +249,69 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		return accumulatedDurationMs.current + segmentDuration;
 	}, []);
 
-	const completeRecording = useCallback((filePath: string | undefined, createdAt: number) => {
-		if (!filePath) return;
-		setCompletedRecording({
-			filePath,
-			title: createDefaultRecordingTitle(createdAt),
+	const latestSetup = useRef({ cursorCaptureMode, exportOptions: defaultExportOptions });
+	latestSetup.current = { cursorCaptureMode, exportOptions: defaultExportOptions };
+
+	// Deliberately stable: the stop/finalize callbacks and the unmount cleanup depend on
+	// this, and must not be rebuilt (or re-run) because a setting changed mid-session.
+	const completeRecording = useCallback(
+		(filePath: string | undefined, createdAt: number, hasWebcamTrack: boolean) => {
+			if (!filePath) return;
+			const setup = activeSetup.current ?? latestSetup.current;
+			setCompletedRecording({
+				filePath,
+				title: createDefaultRecordingTitle(createdAt),
+				exportOptions: setup.exportOptions,
+				quickClip: canFinalizeQuickClip({
+					cursorCaptureMode: setup.cursorCaptureMode,
+					hasWebcamTrack,
+				}),
+				region: activeRegion.current,
+			});
+		},
+		[],
+	);
+
+	useEffect(() => {
+		saveCaptureSettings({
+			mode: captureMode,
+			region: captureRegion,
+			quality: defaultExportOptions.quality,
+			frameRate: defaultExportOptions.frameRate,
+			countdownSeconds,
+			microphoneEnabled,
+			...(microphoneDeviceId ? { microphoneDeviceId } : {}),
+			...(microphoneDeviceName ? { microphoneDeviceName } : {}),
+			systemAudioEnabled,
+			// Preferences, not the area-mode overrides: those must not overwrite them.
+			webcamEnabled: webcamPreference,
+			...(webcamDeviceId ? { webcamDeviceId } : {}),
+			...(webcamDeviceName ? { webcamDeviceName } : {}),
+			cursorCaptureMode: cursorPreference,
 		});
-	}, []);
+	}, [
+		captureMode,
+		captureRegion,
+		countdownSeconds,
+		cursorPreference,
+		defaultExportOptions,
+		microphoneDeviceId,
+		microphoneDeviceName,
+		microphoneEnabled,
+		systemAudioEnabled,
+		webcamDeviceId,
+		webcamDeviceName,
+		webcamPreference,
+	]);
+
+	// Outline the recorded area for as long as the recording runs.
+	useEffect(() => {
+		if (!recording || !activeRegion.current) return;
+		void window.electronAPI?.showRegionFrame?.(activeRegion.current);
+		return () => {
+			void window.electronAPI?.hideRegionFrame?.();
+		};
+	}, [recording]);
 
 	const selectMimeType = () => {
 		// H.264 first: hardware-accelerated, so sharp real-time output. AV1/VP9 are
@@ -444,7 +577,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					} else if (result.path) {
 						await window.electronAPI.setCurrentVideoPath(result.path);
 					}
-					completeRecording(result.session?.screenVideoPath ?? result.path, activeRecordingId);
+					completeRecording(
+						result.session?.screenVideoPath ?? result.path,
+						activeRecordingId,
+						Boolean(result.session?.webcamVideoPath),
+					);
 				} catch (error) {
 					console.error("Error saving recording:", error);
 				} finally {
@@ -557,6 +694,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				completeRecording(
 					storedSession?.screenVideoPath ?? result.path,
 					activeNativeRecording.recordingId,
+					Boolean(storedSession?.webcamVideoPath),
 				);
 				return true;
 			} catch (error) {
@@ -663,6 +801,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				completeRecording(
 					result.session?.screenVideoPath ?? result.path,
 					activeNativeRecording.recordingId,
+					Boolean(result.session?.webcamVideoPath),
 				);
 				return true;
 			} catch (error) {
@@ -682,7 +821,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		[completeRecording, cursorCaptureMode, getRecordingDurationMs],
 	);
 
-	const stopRecording = useRef(() => {
+	const stopRecording = useRef<() => void>(() => undefined);
+	// Reassigned on every render: the tray and hotkey reach this through the ref, and a
+	// function captured once would finish the recording with the first render's settings.
+	stopRecording.current = () => {
 		if (nativeWindowsRecording.current) {
 			void finalizeNativeWindowsRecording(false);
 			return;
@@ -730,7 +872,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			}
 		}
-	});
+	};
 
 	const safeHideCountdownOverlay = useCallback(async (runId: number) => {
 		if (!window.electronAPI?.hideCountdownOverlay) return;
@@ -740,6 +882,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			console.warn("Failed to hide countdown overlay:", error);
 		}
 	}, []);
+
+	// The cleanup below is for unmount only. It reaches the finalizers through refs so
+	// that a changed setting (which rebuilds them) cannot re-run it and discard a live
+	// recording or a running countdown.
+	const finalizeNativeWindowsRef = useRef(finalizeNativeWindowsRecording);
+	finalizeNativeWindowsRef.current = finalizeNativeWindowsRecording;
+	const finalizeNativeMacRef = useRef(finalizeNativeMacRecording);
+	finalizeNativeMacRef.current = finalizeNativeMacRecording;
 
 	useEffect(() => {
 		let cleanup: (() => void) | undefined;
@@ -759,10 +909,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			restarting.current = false;
 			discardRecordingId.current = null;
 			if (nativeWindowsRecording.current) {
-				void finalizeNativeWindowsRecording(true);
+				void finalizeNativeWindowsRef.current(true);
 			}
 			if (nativeMacRecording.current) {
-				void finalizeNativeMacRecording(true);
+				void finalizeNativeMacRef.current(true);
 			}
 
 			if (
@@ -789,12 +939,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			webcamRecorder.current = null;
 			teardownMedia();
 		};
-	}, [
-		teardownMedia,
-		safeHideCountdownOverlay,
-		finalizeNativeWindowsRecording,
-		finalizeNativeMacRecording,
-	]);
+	}, [teardownMedia, safeHideCountdownOverlay]);
 
 	const safeShowCountdownOverlay = async (value: number, runId: number) => {
 		try {
@@ -900,7 +1045,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					...(windowHandle ? { windowHandle } : {}),
 				},
 				video: {
-					fps: TARGET_FRAME_RATE,
+					// Record at the frame rate chosen up front so the clip needs no resampling.
+					fps: defaultExportOptions.frameRate,
 					width: TARGET_WIDTH,
 					height: TARGET_HEIGHT,
 				},
@@ -1035,7 +1181,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					...(windowId ? { windowId } : {}),
 				},
 				video: {
-					fps: TARGET_FRAME_RATE,
+					fps: defaultExportOptions.frameRate,
 					width: TARGET_WIDTH,
 					height: TARGET_HEIGHT,
 					bitrate: computeBitrate(TARGET_WIDTH, TARGET_HEIGHT),
@@ -1116,13 +1262,47 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
+	// Starting the native recorder takes about a second, during which nothing else says
+	// "busy". Without this guard a double click or a second hotkey press starts twice.
 	const startRecordCountdown = async () => {
-		if (countdownActive || recording) {
+		if (countdownActive || recording || startingRef.current) {
 			return;
 		}
+		startingRef.current = true;
+		setStarting(true);
+		try {
+			await runRecordCountdown();
+		} finally {
+			startingRef.current = false;
+			setStarting(false);
+		}
+	};
 
+	const runRecordCountdown = async () => {
 		const runId = countdownRunId.current + 1;
 		countdownRunId.current = runId;
+
+		// An area capture records the whole display the area sits on and crops afterwards,
+		// so make sure that display is the source even if another one was picked since.
+		activeRegion.current = null;
+		activeSetup.current = { cursorCaptureMode, exportOptions: defaultExportOptions };
+		if (captureMode === "area" && captureRegion) {
+			try {
+				const selection = await window.electronAPI.selectScreenSource(captureRegion.displayId);
+				if (!selection.selected) {
+					setCaptureRegion(null);
+					toast.error("The display of the saved area is not connected. Select the area again.");
+					return;
+				}
+				activeRegion.current = captureRegion;
+			} catch (error) {
+				console.warn("Failed to select the display for the area capture:", error);
+			}
+		}
+
+		if (!isCountdownRunActive(runId)) {
+			return;
+		}
 
 		let selectedSource: ProcessedDesktopSource | null = null;
 		try {
@@ -1162,11 +1342,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			return;
 		}
 
+		if (countdownSeconds === 0) {
+			await startRecording(runId);
+			return;
+		}
+
 		setCountdownActive(true);
 
 		let overlayHiddenBeforeStart = false;
 		try {
-			const values = [3, 2, 1];
+			const values = createRecordingCountdownSequence(countdownSeconds);
 			const overlayShown = await safeShowCountdownOverlay(values[0], runId);
 
 			if (countdownRunId.current !== runId) {
@@ -1770,6 +1955,25 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setCompletedRecording((draft) => (draft ? { ...draft, title } : draft));
 	}, []);
 
+	const clearCompletedRecording = useCallback(() => {
+		setCompletedRecording(null);
+	}, []);
+
+	const demoteCompletedRecordingToDraft = useCallback(() => {
+		setCompletedRecording((draft) => (draft ? { ...draft, quickClip: false } : draft));
+	}, []);
+
+	// Bring the camera back if it was on last time. Runs once: later changes come from
+	// the HUD toggle, which goes through the same permission-checked setter.
+	const restoredWebcam = useRef(false);
+	useEffect(() => {
+		if (restoredWebcam.current) return;
+		restoredWebcam.current = true;
+		if (initialSettings.webcamEnabled && window.electronAPI) {
+			void setWebcamEnabled(true);
+		}
+	}, [initialSettings.webcamEnabled, setWebcamEnabled]);
+
 	const openCompletedRecordingInEditor = useCallback(
 		async (options: CompletedRecordingExportOptions) => {
 			if (!completedRecording) return;
@@ -1810,7 +2014,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		recording,
 		paused,
 		saving,
+		// A countdown can still be cancelled, so it does not count as "starting".
+		starting: starting && !countdownActive,
 		elapsedSeconds,
+		countdownSeconds,
+		setCountdownSeconds,
+		captureMode,
+		setCaptureMode,
+		captureRegion,
+		setCaptureRegion,
+		defaultExportOptions,
+		setDefaultExportOptions,
 		toggleRecording,
 		togglePaused,
 		canPauseRecording,
@@ -1835,6 +2049,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
 		completedRecording,
+		clearCompletedRecording,
+		demoteCompletedRecordingToDraft,
 		setCompletedRecordingTitle,
 		openCompletedRecordingInEditor,
 		publishCompletedRecording,

@@ -36,6 +36,11 @@ export interface YandexDiskUploadRequest {
 	filePath: string;
 	fileName?: string;
 	cleanupSourcePaths?: string[];
+	/**
+	 * Keep the uploaded file on disk even when "delete after upload" is on. Used for
+	 * clips the user saved to their own folder, which must outlive the share link.
+	 */
+	keepLocal?: boolean;
 }
 
 export type YandexDiskUploadState =
@@ -53,6 +58,10 @@ export interface YandexDiskUploadStatus {
 	fileName: string;
 	remotePath: string;
 	publicUrl: string;
+	/** Local file this status belongs to, so a view can match it to its clip. */
+	filePath?: string;
+	/** Fraction (0..1) of the file sent so far while `state` is "uploading". */
+	progress?: number;
 	localDeletion?: YandexDiskLocalDeletionState;
 	error?: string;
 }

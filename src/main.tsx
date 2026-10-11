@@ -2,7 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.tsx";
 import { I18nProvider } from "./contexts/I18nContext";
-import { clearStaleSourceCache } from "./lib/exporter/localSourceFile";
 import "./index.css";
 
 const windowType = new URLSearchParams(window.location.search).get("windowType") || "";
@@ -12,14 +11,12 @@ const windowType = new URLSearchParams(window.location.search).get("windowType")
 // Nothing is referenced at startup, so everything stale is safe to remove.
 if (!windowType) {
 	window.setTimeout(() => {
-		clearStaleSourceCache().catch(() => undefined);
+		void import("./lib/exporter/localSourceFile")
+			.then((module) => module.clearStaleSourceCache())
+			.catch(() => undefined);
 	}, 5_000);
 }
-if (
-	windowType === "hud-overlay" ||
-	windowType === "source-selector" ||
-	windowType === "countdown-overlay"
-) {
+if (windowType && windowType !== "editor") {
 	document.body.style.background = "transparent";
 	document.documentElement.style.background = "transparent";
 	document.getElementById("root")?.style.setProperty("background", "transparent");

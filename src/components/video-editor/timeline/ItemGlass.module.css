@@ -1,143 +1,91 @@
-.glassGreen {
+/*
+ * Timeline items. Every kind has the same shape; the kind is told apart by one colour
+ * (set as `--item-rgb`), in the system palette the rest of Studio uses.
+ */
+.zoom,
+.camera,
+.speed,
+.note,
+.cut {
 	position: relative;
-	border-radius: 10px;
-	-corner-smoothing: antialiased;
-	background: linear-gradient(180deg, rgba(52, 178, 123, 0.28), rgba(31, 115, 82, 0.2));
-	border: 1px solid rgba(77, 221, 157, 0.36);
-	box-shadow:
-		0 1px 0 rgba(255, 255, 255, 0.1) inset,
-		0 8px 22px rgba(0, 0, 0, 0.22);
 	margin: 3px 0;
-	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	border-radius: 8px;
+	border: 1px solid rgba(var(--item-rgb), 0.45);
+	background: rgba(var(--item-rgb), 0.2);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	transition:
+		background-color 150ms ease,
+		border-color 150ms ease,
+		box-shadow 150ms ease;
 }
 
-.glassGreen:hover {
-	background: linear-gradient(180deg, rgba(52, 178, 123, 0.36), rgba(31, 115, 82, 0.25));
-	border-color: rgba(77, 221, 157, 0.62);
+.zoom:hover,
+.camera:hover,
+.speed:hover,
+.note:hover {
+	background: rgba(var(--item-rgb), 0.28);
+	border-color: rgba(var(--item-rgb), 0.7);
 }
 
-.glassGreen.selected {
-	background: linear-gradient(180deg, rgba(52, 178, 123, 0.48), rgba(31, 115, 82, 0.32));
-	border-color: #34b27b;
+.zoom.selected,
+.camera.selected,
+.speed.selected,
+.note.selected {
+	background: rgba(var(--item-rgb), 0.36);
+	border-color: rgb(var(--item-rgb));
 	box-shadow:
-		0 0 0 1px rgba(52, 178, 123, 0.95),
-		0 0 0 4px rgba(52, 178, 123, 0.14),
-		0 12px 26px rgba(0, 0, 0, 0.28);
+		0 0 0 1px rgb(var(--item-rgb)),
+		0 0 0 4px rgba(var(--item-rgb), 0.16);
 	z-index: 10;
 }
 
-.glassRed {
-	position: relative;
-	border-radius: 10px;
-	-corner-smoothing: antialiased;
-	background: rgba(239, 68, 68, 0.15);
-	border: 1px solid rgba(239, 68, 68, 0.3);
-	box-shadow: 0 2px 12px 0 rgba(239, 68, 68, 0.1) inset;
-	margin: 3px 0;
-	backdrop-filter: blur(4px);
-	-webkit-backdrop-filter: blur(4px);
-	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+.zoom {
+	--item-rgb: 10, 132, 255;
 }
 
-.glassRed:hover {
-	background: rgba(239, 68, 68, 0.25);
-	border-color: rgba(239, 68, 68, 0.5);
-	box-shadow: 0 4px 20px 0 rgba(239, 68, 68, 0.2) inset;
+.camera {
+	--item-rgb: 191, 90, 242;
 }
 
-.glassRed.selected {
-	background: rgba(239, 68, 68, 0.35);
-	border-color: #ef4444;
+.speed {
+	--item-rgb: 255, 159, 10;
+}
+
+.note {
+	--item-rgb: 255, 214, 10;
+}
+
+/*
+ * A part of the video that has been removed. It is opaque, so it hides the filmstrip of
+ * the clip beneath it, and hatched, so it reads as "not in the video" rather than as
+ * one more kind of item.
+ */
+.cut {
+	--item-rgb: 142, 142, 147;
+	border: 1px dashed rgba(255, 255, 255, 0.24);
+	background:
+		repeating-linear-gradient(
+			-45deg,
+			rgba(255, 255, 255, 0.075) 0 6px,
+			transparent 6px 12px
+		),
+		#19191b;
+	box-shadow: none;
+}
+
+.cut:hover {
+	border-color: rgba(255, 255, 255, 0.42);
+}
+
+.cut.selected {
+	border: 1px solid #0a84ff;
 	box-shadow:
-		0 0 0 1px #ef4444,
-		0 4px 20px 0 rgba(239, 68, 68, 0.3) inset;
+		0 0 0 1px #0a84ff,
+		0 0 0 4px rgba(10, 132, 255, 0.16);
 	z-index: 10;
 }
 
-.glassYellow {
-	position: relative;
-	border-radius: 10px;
-	-corner-smoothing: antialiased;
-	background: rgba(180, 160, 70, 0.15);
-	border: 1px solid rgba(180, 160, 70, 0.3);
-	box-shadow: 0 2px 12px 0 rgba(180, 160, 70, 0.1) inset;
-	margin: 3px 0;
-	backdrop-filter: blur(4px);
-	-webkit-backdrop-filter: blur(4px);
-	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glassYellow:hover {
-	background: rgba(180, 160, 70, 0.25);
-	border-color: rgba(180, 160, 70, 0.5);
-	box-shadow: 0 4px 20px 0 rgba(180, 160, 70, 0.2) inset;
-}
-
-.glassYellow.selected {
-	background: rgba(180, 160, 70, 0.35);
-	border-color: #b4a046;
-	box-shadow:
-		0 0 0 1px #b4a046,
-		0 4px 20px 0 rgba(180, 160, 70, 0.3) inset;
-	z-index: 10;
-}
-
-.glassAmber {
-	position: relative;
-	border-radius: 10px;
-	-corner-smoothing: antialiased;
-	background: rgba(245, 158, 11, 0.15);
-	border: 1px solid rgba(245, 158, 11, 0.3);
-	box-shadow: 0 2px 12px 0 rgba(245, 158, 11, 0.1) inset;
-	margin: 3px 0;
-	backdrop-filter: blur(4px);
-	-webkit-backdrop-filter: blur(4px);
-	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glassAmber:hover {
-	background: rgba(245, 158, 11, 0.25);
-	border-color: rgba(245, 158, 11, 0.5);
-	box-shadow: 0 4px 20px 0 rgba(245, 158, 11, 0.2) inset;
-}
-
-.glassAmber.selected {
-	background: rgba(245, 158, 11, 0.35);
-	border-color: #f59e0b;
-	box-shadow:
-		0 0 0 1px #f59e0b,
-		0 4px 20px 0 rgba(245, 158, 11, 0.3) inset;
-	z-index: 10;
-}
-
-.glassBlue {
-	position: relative;
-	border-radius: 10px;
-	-corner-smoothing: antialiased;
-	background: linear-gradient(180deg, rgba(56, 189, 248, 0.28), rgba(14, 116, 144, 0.2));
-	border: 1px solid rgba(56, 189, 248, 0.36);
-	box-shadow:
-		0 1px 0 rgba(255, 255, 255, 0.1) inset,
-		0 8px 22px rgba(0, 0, 0, 0.22);
-	margin: 3px 0;
-	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glassBlue:hover {
-	background: linear-gradient(180deg, rgba(56, 189, 248, 0.36), rgba(14, 116, 144, 0.25));
-	border-color: rgba(56, 189, 248, 0.62);
-}
-
-.glassBlue.selected {
-	background: linear-gradient(180deg, rgba(56, 189, 248, 0.48), rgba(14, 116, 144, 0.32));
-	border-color: #38bdf8;
-	box-shadow:
-		0 0 0 1px rgba(56, 189, 248, 0.95),
-		0 0 0 4px rgba(56, 189, 248, 0.14),
-		0 12px 26px rgba(0, 0, 0, 0.28);
-	z-index: 10;
-}
-
+/* Resize handles at both ends of an item. */
 .zoomEndCap {
 	position: absolute;
 	top: 0;
@@ -151,29 +99,29 @@
 		width 0.2s;
 }
 
-.glassGreen:hover .zoomEndCap,
-.glassGreen.selected .zoomEndCap,
-.glassRed:hover .zoomEndCap,
-.glassRed.selected .zoomEndCap,
-.glassYellow:hover .zoomEndCap,
-.glassYellow.selected .zoomEndCap,
-.glassAmber:hover .zoomEndCap,
-.glassAmber.selected .zoomEndCap,
-.glassBlue:hover .zoomEndCap,
-.glassBlue.selected .zoomEndCap {
+.zoom:hover .zoomEndCap,
+.zoom.selected .zoomEndCap,
+.camera:hover .zoomEndCap,
+.camera.selected .zoomEndCap,
+.speed:hover .zoomEndCap,
+.speed.selected .zoomEndCap,
+.note:hover .zoomEndCap,
+.note.selected .zoomEndCap,
+.cut:hover .zoomEndCap,
+.cut.selected .zoomEndCap {
 	opacity: 1;
 }
 
 .zoomEndCap.left {
 	left: 0;
 	cursor: ew-resize;
-	border-top-left-radius: 9px;
-	border-bottom-left-radius: 9px;
+	border-top-left-radius: 7px;
+	border-bottom-left-radius: 7px;
 }
 
 .zoomEndCap.right {
 	right: 0;
 	cursor: ew-resize;
-	border-top-right-radius: 9px;
-	border-bottom-right-radius: 9px;
+	border-top-right-radius: 7px;
+	border-bottom-right-radius: 7px;
 }

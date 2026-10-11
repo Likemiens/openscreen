@@ -21,6 +21,7 @@ import {
 	DEFAULT_WEBCAM_MIRRORED,
 	DEFAULT_WEBCAM_REACTIVE_ZOOM,
 } from "@/components/video-editor/types";
+import type { DeviceFrameSettings } from "@/lib/deviceFrame";
 import type { AspectRatio } from "@/utils/aspectRatioUtils";
 
 // Undoable state. Selection IDs are excluded, since undoing a selection change
@@ -34,6 +35,8 @@ export interface EditorState {
 	 * per-zoom Focus Mode selector is locked. */
 	autoFocusAll: boolean;
 	trimRegions: TrimRegion[];
+	/** Where the kept video is split into pieces on the clip track, in ms. */
+	clipSplits: number[];
 	speedRegions: SpeedRegion[];
 	annotationRegions: AnnotationRegion[];
 	cropRegion: CropRegion;
@@ -44,6 +47,8 @@ export interface EditorState {
 	motionBlurAmount: number;
 	borderRadius: number;
 	padding: number;
+	/** Device mockup (phone, laptop, browser window…) drawn around the video. */
+	deviceFrame: DeviceFrameSettings;
 	aspectRatio: AspectRatio;
 	webcamLayoutPreset: WebcamLayoutPreset;
 	webcamMaskShape: WebcamMaskShape;
@@ -59,6 +64,7 @@ export const INITIAL_EDITOR_STATE: EditorState = {
 	autoZoomEnabled: true,
 	autoFocusAll: false,
 	trimRegions: [],
+	clipSplits: [],
 	speedRegions: [],
 	annotationRegions: [],
 	cropRegion: DEFAULT_CROP_REGION,
@@ -69,6 +75,7 @@ export const INITIAL_EDITOR_STATE: EditorState = {
 	motionBlurAmount: DEFAULT_EDITOR_APPEARANCE_SETTINGS.motionBlurAmount,
 	borderRadius: DEFAULT_EDITOR_APPEARANCE_SETTINGS.borderRadius,
 	padding: DEFAULT_EDITOR_LAYOUT_SETTINGS.padding,
+	deviceFrame: DEFAULT_EDITOR_LAYOUT_SETTINGS.deviceFrame,
 	aspectRatio: DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio,
 	webcamLayoutPreset: DEFAULT_WEBCAM_SETTINGS.layoutPreset,
 	webcamMaskShape: DEFAULT_WEBCAM_SETTINGS.maskShape,

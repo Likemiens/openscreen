@@ -1,0 +1,106 @@
+.overlay {
+	position: fixed;
+	inset: 0;
+	overflow: hidden;
+	cursor: crosshair;
+	user-select: none;
+	touch-action: none;
+}
+
+/* Before a selection exists the whole display is dimmed; afterwards the selection
+   dims everything around itself (see .selection). */
+.overlayDimmed {
+	background: rgba(0, 0, 0, 0.38);
+}
+
+.prompt {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	padding: 14px 20px;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 14px;
+	background: rgba(30, 30, 32, 0.9);
+	box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.6);
+	text-align: center;
+	transform: translate(-50%, -50%);
+	pointer-events: none;
+}
+
+.promptTitle {
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+.promptHint {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	margin-top: 6px;
+	color: rgba(235, 235, 245, 0.62);
+	font-size: 12px;
+}
+
+.selection {
+	position: absolute;
+	box-sizing: border-box;
+	border: 1px solid rgba(255, 255, 255, 0.95);
+	/* The huge spread shadow is the dimming of everything outside the selection. */
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.45),
+		0 0 0 100vmax rgba(0, 0, 0, 0.42);
+	cursor: move;
+}
+
+.sizeBadge {
+	position: absolute;
+	bottom: calc(100% + 8px);
+	left: -1px;
+	padding: 3px 7px;
+	border-radius: 6px;
+	background: rgba(30, 30, 32, 0.92);
+	color: #fff;
+	font-size: 11.5px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+.sizeBadgeInside {
+	top: 8px;
+	bottom: auto;
+	left: 8px;
+}
+
+.handle {
+	position: absolute;
+	width: 9px;
+	height: 9px;
+	border: 1px solid rgba(0, 0, 0, 0.35);
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+	transform: translate(-50%, -50%);
+}
+
+/* A larger invisible hit area makes the small handle easy to grab. */
+.handle::after {
+	content: "";
+	position: absolute;
+	inset: -8px;
+}
+
+.toolbar {
+	position: absolute;
+	width: max-content;
+	transform: translateX(-50%);
+	cursor: default;
+}
+
+.compactOption {
+	min-width: 38px;
+	padding: 0 8px;
+}

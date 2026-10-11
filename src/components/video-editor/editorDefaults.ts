@@ -1,4 +1,5 @@
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
+import { DEFAULT_DEVICE_FRAME, type DeviceFrameSettings } from "@/lib/deviceFrame";
 import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
 import { DEFAULT_WALLPAPER } from "@/lib/wallpaper";
 import type { AspectRatio } from "@/utils/aspectRatioUtils";
@@ -49,11 +50,13 @@ export const DEFAULT_EDITOR_LAYOUT_SETTINGS: {
 	aspectRatio: AspectRatio;
 	cropRegion: typeof DEFAULT_CROP_REGION;
 	wallpaper: string;
+	deviceFrame: DeviceFrameSettings;
 } = {
 	padding: 50,
 	aspectRatio: "16:9",
 	cropRegion: DEFAULT_CROP_REGION,
 	wallpaper: DEFAULT_WALLPAPER,
+	deviceFrame: DEFAULT_DEVICE_FRAME,
 };
 
 export const DEFAULT_WEBCAM_SETTINGS = {

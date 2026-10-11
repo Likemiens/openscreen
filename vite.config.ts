@@ -60,12 +60,9 @@ export default defineConfig({
 					if (id.includes("pixi.js") || id.includes("pixi-filters") || id.includes("@pixi/"))
 						return "pixi";
 					if (id.includes("react-dom") || id.includes("/react/")) return "react-vendor";
-					if (
-						id.includes("mediabunny") ||
-						id.includes("mp4box") ||
-						id.includes("fix-webm-duration")
-					)
-						return "video-processing";
+					// Encoding libraries load on demand (saving a clip, exporting). Keep anything
+					// the recorder HUD needs at startup out of this chunk.
+					if (id.includes("mediabunny") || id.includes("mp4box")) return "video-processing";
 				},
 			},
 		},

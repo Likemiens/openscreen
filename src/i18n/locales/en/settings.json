@@ -36,7 +36,7 @@
 		"previewFrameSteppingHint": "Above {{native}}×, preview is frame-stepped and muted. Export is unaffected."
 	},
 	"trim": {
-		"deleteRegion": "Delete Trim Region"
+		"deleteRegion": "Restore Removed Part"
 	},
 	"layout": {
 		"title": "Layout",

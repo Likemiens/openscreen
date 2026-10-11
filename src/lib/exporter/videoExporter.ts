@@ -8,6 +8,7 @@ import type {
 	WebcamSizePreset,
 	ZoomRegion,
 } from "@/components/video-editor/types";
+import { type DeviceFrameSettings, hasDeviceFrame } from "@/lib/deviceFrame";
 import { BackgroundLoadError } from "@/lib/wallpaper";
 import type { CursorRecordingData } from "@/native/contracts";
 import { getPlatform } from "@/utils/platformUtils";
@@ -67,6 +68,7 @@ export interface VideoExporterConfig extends ExportConfig {
 	motionBlurAmount?: number;
 	borderRadius?: number;
 	padding?: number;
+	deviceFrame?: DeviceFrameSettings | null;
 	videoPadding?: number;
 	cropRegion: CropRegion;
 	webcamLayoutPreset?: WebcamLayoutPreset;
@@ -157,6 +159,7 @@ export function getSourceCopyFastPathBlockers(
 	if ((config.padding ?? 0) > SOURCE_COPY_EPSILON) blockers.push("padding is not zero");
 	if ((config.videoPadding ?? 0) > SOURCE_COPY_EPSILON) blockers.push("video padding is not zero");
 	if ((config.borderRadius ?? 0) > SOURCE_COPY_EPSILON) blockers.push("roundness is not zero");
+	if (hasDeviceFrame(config.deviceFrame)) blockers.push("device frame is enabled");
 	if (config.showShadow || config.shadowIntensity > SOURCE_COPY_EPSILON) {
 		blockers.push("shadow is enabled");
 	}
@@ -295,6 +298,7 @@ export class VideoExporter {
 				motionBlurAmount: this.config.motionBlurAmount,
 				borderRadius: this.config.borderRadius,
 				padding: this.config.padding,
+				deviceFrame: this.config.deviceFrame,
 				cropRegion: this.config.cropRegion,
 				cursorRecordingData: this.config.cursorRecordingData,
 				cursorScale: this.config.cursorScale,

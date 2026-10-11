@@ -114,7 +114,7 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
 					{t("customFont.dialogTitle")}
 				</Button>
 			</DialogTrigger>
-			<DialogContent className="bg-[#1a1a1c] border-white/10 text-slate-200">
+			<DialogContent className="bg-[#2a2a2d] border-white/10 text-slate-200">
 				<DialogHeader>
 					<DialogTitle>{t("customFont.dialogTitle")}</DialogTitle>
 					<DialogDescription className="text-slate-400">

@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { AppSettings } from "../src/lib/appSettings";
+import type { CaptureRegion, RegionRect } from "../src/lib/captureRegion";
 import type { NativeMacRecordingRequest } from "../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../src/lib/nativeWindowsRecording";
+import type { HudCommand } from "../src/lib/quickCaptureContracts";
 import type { RecordingSession, StoreRecordedSessionInput } from "../src/lib/recordingSession";
 import type { ShortcutBinding } from "../src/lib/shortcuts";
 import type {
@@ -28,6 +31,86 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	hudOverlayClose: () => {
 		ipcRenderer.send("hud-overlay-close");
 	},
+	showHudOverlay: () => {
+		ipcRenderer.send("hud-overlay-show");
+	},
+	setHudBusy: (busy: boolean) => {
+		ipcRenderer.send("hud-set-busy", busy);
+	},
+	consumePendingHudCommand: () => {
+		return ipcRenderer.invoke("hud-consume-pending-command");
+	},
+	onHudCommand: (callback: (command: HudCommand) => void) => {
+		const listener = (_event: unknown, command: HudCommand) => callback(command);
+		ipcRenderer.on("hud-command", listener);
+		return () => ipcRenderer.removeListener("hud-command", listener);
+	},
+	getAppSettings: () => {
+		return ipcRenderer.invoke("app-settings-get");
+	},
+	updateAppSettings: (patch: Partial<AppSettings>) => {
+		return ipcRenderer.invoke("app-settings-update", patch);
+	},
+	setShortcutCaptureActive: (active: boolean) => {
+		ipcRenderer.send("app-settings-shortcut-capture", active);
+	},
+	pickSaveFolder: () => {
+		return ipcRenderer.invoke("app-settings-pick-save-folder");
+	},
+	openSaveFolder: () => {
+		return ipcRenderer.invoke("app-settings-open-save-folder");
+	},
+	openRegionSelector: (initialRegion?: CaptureRegion | null) => {
+		return ipcRenderer.invoke("region-selector-open", initialRegion ?? null);
+	},
+	getRegionSelectorContext: () => {
+		return ipcRenderer.invoke("region-selector-get-context");
+	},
+	confirmRegionSelection: (rect: RegionRect, startRecording: boolean) => {
+		return ipcRenderer.invoke("region-selector-confirm", rect, startRecording);
+	},
+	cancelRegionSelection: () => {
+		return ipcRenderer.invoke("region-selector-cancel");
+	},
+	showRegionFrame: (region: CaptureRegion) => {
+		return ipcRenderer.invoke("region-frame-show", region);
+	},
+	hideRegionFrame: () => {
+		return ipcRenderer.invoke("region-frame-hide");
+	},
+	selectScreenSource: (displayId?: number) => {
+		return ipcRenderer.invoke("select-screen-source", displayId);
+	},
+	openClipOutput: (title: string) => {
+		return ipcRenderer.invoke("quick-clip-open-output", title);
+	},
+	writeClipOutput: (id: string, position: number, data: Uint8Array) => {
+		return ipcRenderer.invoke("quick-clip-write", id, position, data);
+	},
+	closeClipOutput: (id: string, discard?: boolean) => {
+		return ipcRenderer.invoke("quick-clip-close-output", id, discard);
+	},
+	copyRecordingAsClip: (sourcePath: string, title: string) => {
+		return ipcRenderer.invoke("quick-clip-copy-source", sourcePath, title);
+	},
+	renameClip: (filePath: string, title: string) => {
+		return ipcRenderer.invoke("quick-clip-rename", filePath, title);
+	},
+	copyClipFile: (filePath: string) => {
+		return ipcRenderer.invoke("quick-clip-copy-file", filePath);
+	},
+	getClipThumbnail: (filePath: string) => {
+		return ipcRenderer.invoke("quick-clip-thumbnail", filePath);
+	},
+	startClipDrag: (filePath: string) => {
+		ipcRenderer.send("quick-clip-start-drag", filePath);
+	},
+	trashClip: (filePath: string) => {
+		return ipcRenderer.invoke("quick-clip-trash", filePath);
+	},
+	discardRecordingSource: (screenVideoPath: string) => {
+		return ipcRenderer.invoke("quick-clip-discard-source", screenVideoPath);
+	},
 	setHudOverlayIgnoreMouseEvents: (ignore: boolean) => {
 		ipcRenderer.send("hud-overlay-ignore-mouse-events", ignore);
 	},
@@ -51,8 +134,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	startNewRecording: () => {
 		return ipcRenderer.invoke("start-new-recording");
 	},
-	openSourceSelector: () => {
-		return ipcRenderer.invoke("open-source-selector");
+	openSourceSelector: (tab?: "screens" | "windows") => {
+		return ipcRenderer.invoke("open-source-selector", tab);
 	},
 	selectSource: (source: ProcessedDesktopSource) => {
 		return ipcRenderer.invoke("select-source", source);
@@ -185,6 +268,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	openVideoFilePicker: () => {
 		return ipcRenderer.invoke("open-video-file-picker");
+	},
+	openVideoFileFromPath: (filePath: string) => {
+		return ipcRenderer.invoke("open-video-file-from-path", filePath);
 	},
 	setCurrentVideoPath: (path: string) => {
 		return ipcRenderer.invoke("set-current-video-path", path);

@@ -35,7 +35,23 @@ const recorderState = vi.hoisted(() => ({
 		recording: false,
 		paused: false,
 		saving: false,
+		starting: false,
 		elapsedSeconds: 0,
+		countdownSeconds: 3,
+		setCountdownSeconds: vi.fn(),
+		captureMode: "screen" as "area" | "window" | "screen",
+		setCaptureMode: vi.fn(),
+		captureRegion: null as import("@/lib/captureRegion").CaptureRegion | null,
+		setCaptureRegion: vi.fn(),
+		completedRecording: null,
+		clearCompletedRecording: vi.fn(),
+		demoteCompletedRecordingToDraft: vi.fn(),
+		setCompletedRecordingTitle: vi.fn(),
+		openCompletedRecordingInEditor: vi.fn(),
+		publishCompletedRecording: vi.fn(),
+		saveCompletedRecording: vi.fn(),
+		defaultExportOptions: { quality: "good", frameRate: 60 },
+		setDefaultExportOptions: vi.fn(),
 		toggleRecording: vi.fn(),
 		togglePaused: vi.fn(),
 		canPauseRecording: false,
@@ -44,16 +60,18 @@ const recorderState = vi.hoisted(() => ({
 		microphoneEnabled: false,
 		setMicrophoneEnabled: vi.fn(),
 		microphoneDeviceId: undefined,
+		microphoneDeviceName: undefined,
 		setMicrophoneDeviceId: vi.fn(),
 		setMicrophoneDeviceName: vi.fn(),
 		webcamEnabled: false,
 		setWebcamEnabled: vi.fn(async () => true),
 		webcamDeviceId: undefined,
+		webcamDeviceName: undefined,
 		setWebcamDeviceId: vi.fn(),
 		setWebcamDeviceName: vi.fn(),
 		systemAudioEnabled: false,
 		setSystemAudioEnabled: vi.fn(),
-		cursorCaptureMode: "editable-overlay",
+		cursorCaptureMode: "editable-overlay" as "editable-overlay" | "system",
 		setCursorCaptureMode: vi.fn(),
 		softwareEncoderFallbackNoticeVisible: false,
 		dismissSoftwareEncoderFallbackNotice: vi.fn(),
@@ -62,6 +80,7 @@ const recorderState = vi.hoisted(() => ({
 
 let selectedSourceChangedListeners: SelectedSourceChangedListener[] = [];
 let sourceSelectorClosedListeners: Array<() => void> = [];
+let hudCommandListeners: Array<Parameters<Window["electronAPI"]["onHudCommand"]>[0]> = [];
 
 vi.mock("../../hooks/useScreenRecorder", () => ({
 	useScreenRecorder: () => recorderState.value,
@@ -181,6 +200,16 @@ function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSo
 		moveHudOverlayBy: vi.fn(),
 		hudOverlayHide: vi.fn(),
 		hudOverlayClose: vi.fn(),
+		showHudOverlay: vi.fn(),
+		setHudBusy: vi.fn(),
+		consumePendingHudCommand: vi.fn(async () => null),
+		onHudCommand: vi.fn((callback) => {
+			hudCommandListeners.push(callback);
+			return () => {
+				hudCommandListeners = hudCommandListeners.filter((listener) => listener !== callback);
+			};
+		}),
+		openRegionSelector: vi.fn(async () => ({ canceled: true as const })),
 		switchToEditor: vi.fn(async () => undefined),
 		onSelectedSourceChanged: vi.fn((callback) => {
 			selectedSourceChangedListeners.push(callback);
@@ -228,12 +257,27 @@ function emitSourceSelectorClosed() {
 }
 
 function resetLaunchMocks() {
+	localStorage.clear();
 	vi.stubGlobal("ResizeObserver", StubResizeObserver);
 	recorderState.value.toggleRecording.mockClear();
 	recorderState.value.softwareEncoderFallbackNoticeVisible = false;
 	recorderState.value.dismissSoftwareEncoderFallbackNotice.mockClear();
+	recorderState.value.setCountdownSeconds.mockClear();
+	recorderState.value.setDefaultExportOptions.mockClear();
+	recorderState.value.setMicrophoneEnabled.mockClear();
+	recorderState.value.setWebcamEnabled.mockClear();
+	recorderState.value.setSystemAudioEnabled.mockClear();
+	recorderState.value.setCursorCaptureMode.mockClear();
+	recorderState.value.setCaptureMode.mockClear();
+	recorderState.value.setCaptureRegion.mockClear();
+	recorderState.value.captureMode = "screen";
+	recorderState.value.captureRegion = null;
+	recorderState.value.cursorCaptureMode = "editable-overlay";
+	recorderState.value.webcamEnabled = false;
+	recorderState.value.starting = false;
 	selectedSourceChangedListeners = [];
 	sourceSelectorClosedListeners = [];
+	hudCommandListeners = [];
 	i18nState.value.systemLocaleSuggestion = null;
 	i18nState.value.acceptSystemLocaleSuggestion.mockClear();
 	i18nState.value.dismissSystemLocaleSuggestion.mockClear();
@@ -258,7 +302,7 @@ describe("LaunchWindow record button", () => {
 		const recordButton = await screen.findByTestId("launch-record-button");
 
 		expect(recordButton).toBeEnabled();
-		expect(recordButton).toHaveAttribute("title", "Please select a source to record");
+		expect(recordButton).toHaveAttribute("aria-label", "Please select a source to record");
 
 		fireEvent.click(recordButton);
 
@@ -278,7 +322,7 @@ describe("LaunchWindow record button", () => {
 		await waitFor(() => {
 			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
 		});
-		expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
+		expect(screen.getByTestId("launch-record-button")).toHaveAttribute("aria-label", "Display 1");
 	});
 
 	it("does not record after manual source selection", async () => {
@@ -288,7 +332,7 @@ describe("LaunchWindow record button", () => {
 		emitSelectedSourceChanged(displayOneSource);
 
 		await waitFor(() => {
-			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("aria-label", "Display 1");
 		});
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 	});
@@ -302,7 +346,7 @@ describe("LaunchWindow record button", () => {
 		emitSelectedSourceChanged(displayOneSource);
 
 		await waitFor(() => {
-			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("aria-label", "Display 1");
 		});
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 	});
@@ -328,7 +372,7 @@ describe("LaunchWindow record button", () => {
 		emitSelectedSourceChanged(displayOneSource);
 
 		await waitFor(() => {
-			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute("aria-label", "Display 1");
 		});
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 	});
@@ -358,7 +402,7 @@ describe("LaunchWindow record button", () => {
 
 		const recordButton = await screen.findByTestId("launch-record-button");
 		await waitFor(() => {
-			expect(recordButton).toHaveAttribute("title", "Display 1");
+			expect(recordButton).toHaveAttribute("aria-label", "Display 1");
 		});
 
 		fireEvent.click(recordButton);
@@ -399,6 +443,200 @@ describe("LaunchWindow personal HUD", () => {
 		expect(screen.queryByText("Use your system language?")).not.toBeInTheDocument();
 		expect(screen.queryByTestId("launch-tray-layout-button")).not.toBeInTheDocument();
 	});
+
+	it("applies a recording recipe to capture and export settings", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-settings-button"));
+		fireEvent.click(await screen.findByTestId("launch-recording-recipes-button"));
+		fireEvent.click(await screen.findByRole("button", { name: /Product Demo/ }));
+
+		await waitFor(() => {
+			expect(recorderState.value.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+			expect(recorderState.value.setWebcamEnabled).toHaveBeenCalledWith(true);
+			expect(recorderState.value.setSystemAudioEnabled).toHaveBeenCalledWith(false);
+			expect(recorderState.value.setCursorCaptureMode).toHaveBeenCalledWith("editable-overlay");
+			expect(recorderState.value.setCountdownSeconds).toHaveBeenCalledWith(3);
+			expect(recorderState.value.setDefaultExportOptions).toHaveBeenCalledWith({
+				quality: "good",
+				frameRate: 60,
+			});
+		});
+	});
+});
+
+describe("LaunchWindow capture flow", () => {
+	const region = {
+		displayId: 1,
+		x: 100,
+		y: 80,
+		width: 640,
+		height: 360,
+		displayWidth: 1920,
+		displayHeight: 1080,
+		scaleFactor: 1,
+	};
+
+	beforeEach(() => {
+		platformState.value = "win32";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("goes through the area picker and records once the new area is applied", async () => {
+		recorderState.value.captureMode = "area";
+		recorderState.value.cursorCaptureMode = "system";
+		window.electronAPI.openRegionSelector = vi.fn(async () => ({
+			canceled: false as const,
+			region,
+			startRecording: true,
+		}));
+
+		const view = renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+
+		await waitFor(() => {
+			expect(recorderState.value.setCaptureRegion).toHaveBeenCalledWith(region);
+		});
+		// Recording waits for the picked area to become the recorder's state.
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+
+		recorderState.value.captureRegion = region;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		await waitFor(() => {
+			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		});
+		expect(screen.getByTestId("launch-capture-mode-area")).toHaveTextContent("640 × 360");
+	});
+
+	it("keeps the area without recording when the picker is confirmed with Done", async () => {
+		recorderState.value.captureMode = "area";
+		recorderState.value.cursorCaptureMode = "system";
+		window.electronAPI.openRegionSelector = vi.fn(async () => ({
+			canceled: false as const,
+			region,
+			startRecording: false,
+		}));
+
+		const view = renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-capture-mode-area"));
+		await waitFor(() => {
+			expect(recorderState.value.setCaptureRegion).toHaveBeenCalledWith(region);
+		});
+
+		recorderState.value.captureRegion = region;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("locks the camera and the cursor choice for area clips without changing the preferences", async () => {
+		recorderState.value.captureMode = "area";
+		recorderState.value.cursorCaptureMode = "system";
+
+		renderLaunchWindow();
+
+		expect(await screen.findByTestId("launch-webcam-button")).toBeDisabled();
+		fireEvent.click(screen.getByTestId("launch-format-button"));
+		expect(await screen.findByRole("radio", { name: "Editable" })).toBeDisabled();
+		// The recorder derives the area-mode overrides itself; the HUD must not rewrite
+		// the stored camera/cursor preferences.
+		expect(recorderState.value.setWebcamEnabled).not.toHaveBeenCalled();
+		expect(recorderState.value.setCursorCaptureMode).not.toHaveBeenCalled();
+	});
+
+	it("ignores Record and the hotkey while a capture is already starting", async () => {
+		recorderState.value.starting = true;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+
+		renderLaunchWindow();
+		await waitFor(() => expect(hudCommandListeners.length).toBeGreaterThan(0));
+
+		const recordButton = await screen.findByTestId("launch-record-button");
+		expect(recordButton).toBeDisabled();
+		expect(recordButton).toHaveTextContent("Starting");
+		await act(async () => {
+			hudCommandListeners.forEach((listener) => listener("quick-record"));
+		});
+
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+		expect(window.electronAPI.openRegionSelector).not.toHaveBeenCalled();
+	});
+
+	it("lets quality and frame rate be chosen before recording", async () => {
+		renderLaunchWindow();
+
+		const formatButton = await screen.findByTestId("launch-format-button");
+		expect(formatButton).toHaveTextContent("1080p · 60");
+
+		fireEvent.click(formatButton);
+		fireEvent.click(await screen.findByRole("radio", { name: "720p" }));
+		expect(recorderState.value.setDefaultExportOptions).toHaveBeenCalledWith({
+			quality: "medium",
+			frameRate: 60,
+		});
+
+		fireEvent.click(screen.getByRole("radio", { name: "30 fps" }));
+		expect(recorderState.value.setDefaultExportOptions).toHaveBeenCalledWith({
+			quality: "good",
+			frameRate: 30,
+		});
+	});
+
+	it("starts recording the selected screen when the record hotkey arrives", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+
+		renderLaunchWindow();
+		await waitFor(() => expect(hudCommandListeners.length).toBeGreaterThan(0));
+
+		await act(async () => {
+			hudCommandListeners.forEach((listener) => listener("quick-record"));
+		});
+
+		await waitFor(() => {
+			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		});
+		expect(window.electronAPI.showHudOverlay).toHaveBeenCalled();
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+	});
+
+	it("runs a capture that was requested while the HUD was still loading", async () => {
+		recorderState.value.captureMode = "area";
+		recorderState.value.cursorCaptureMode = "system";
+		window.electronAPI.consumePendingHudCommand = vi.fn(async () => "quick-record" as const);
+
+		renderLaunchWindow();
+
+		await waitFor(() => {
+			expect(window.electronAPI.openRegionSelector).toHaveBeenCalledTimes(1);
+		});
+		// The area picker covers the display, so the HUD is not forced on screen first.
+		expect(window.electronAPI.showHudOverlay).not.toHaveBeenCalled();
+	});
+
+	it("hides to the tray instead of quitting when closed", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByRole("button", { name: "Hide to tray" }));
+
+		expect(window.electronAPI.hudOverlayClose).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe("LaunchWindow HUD drag", () => {
@@ -424,23 +662,13 @@ describe("LaunchWindow HUD drag", () => {
 
 		const dragHandle = await screen.findByTestId("hud-drag-handle");
 
-		// Give the bar a non-zero, changing size so a resize observation would actually
-		// trigger a `setHudOverlaySize` call if it weren't suppressed during the drag.
-		const bar = dragHandle.closest("[data-tray-layout]") as HTMLElement | null;
-		if (bar) {
-			vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({
-				top: 700,
-				left: 200,
-				right: 600,
-				bottom: 756,
-				width: 400,
-				height: 56,
-				x: 200,
-				y: 700,
-				toJSON: () => ({}),
-			});
-			Object.defineProperty(bar, "scrollHeight", { value: 56, configurable: true });
-			Object.defineProperty(bar, "scrollWidth", { value: 400, configurable: true });
+		// Give the stack a non-zero size so a resize observation would actually trigger a
+		// `setHudOverlaySize` call if it were not suppressed during the drag.
+		const stack = dragHandle.closest("[data-hud-stack]") as HTMLElement | null;
+		expect(stack).not.toBeNull();
+		if (stack) {
+			Object.defineProperty(stack, "scrollHeight", { value: 56, configurable: true });
+			Object.defineProperty(stack, "scrollWidth", { value: 400, configurable: true });
 		}
 
 		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {

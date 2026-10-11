@@ -59,6 +59,8 @@ export function SourceSelector() {
 		void fetchSources();
 	}, [fetchSources]);
 
+	// The HUD opens the picker on the tab that matches the chosen capture mode.
+	const requestedTab = new URLSearchParams(window.location.search).get("tab");
 	const screenSources = sources.filter((s) => s.id.startsWith("screen:"));
 	const windowSources = sources.filter((s) => s.id.startsWith("window:"));
 	const hasNoSources = !loading && sources.length === 0;
@@ -75,7 +77,7 @@ export function SourceSelector() {
 				style={{ minHeight: "100vh" }}
 			>
 				<div className="text-center">
-					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#34B27B] mx-auto mb-2" />
+					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#0A84FF] mx-auto mb-2" />
 					<p className="text-xs text-zinc-400">{t("sourceSelector.loading")}</p>
 				</div>
 			</div>
@@ -97,7 +99,7 @@ export function SourceSelector() {
 					</p>
 					<Button
 						onClick={() => void fetchSources()}
-						className="mt-4 h-8 rounded-lg bg-[#34B27B] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#34B27B]/85 active:scale-95"
+						className="mt-4 h-8 rounded-lg bg-[#0A84FF] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#0A84FF]/85 active:scale-95"
 					>
 						{tc("actions.reload")}
 					</Button>
@@ -145,7 +147,11 @@ export function SourceSelector() {
 		<div className={`min-h-screen flex flex-col ${styles.glassContainer}`}>
 			<div className="flex-1 flex flex-col w-full px-3.5 pt-3.5">
 				<Tabs
-					defaultValue={screenSources.length === 0 ? "windows" : "screens"}
+					defaultValue={
+						screenSources.length === 0 || (requestedTab === "windows" && windowSources.length > 0)
+							? "windows"
+							: "screens"
+					}
 					className="flex-1 flex flex-col"
 				>
 					<TabsList className="mb-3 grid h-8 grid-cols-2 rounded-xl border border-white/[0.06] bg-white/[0.04] p-0.5">
@@ -193,7 +199,7 @@ export function SourceSelector() {
 					data-testid="source-selector-share-button"
 					onClick={handleShare}
 					disabled={!selectedSource}
-					className="h-8 rounded-lg bg-[#34B27B] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#34B27B]/85 active:scale-95 disabled:bg-zinc-700 disabled:opacity-30"
+					className="h-8 rounded-lg bg-[#0A84FF] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#0A84FF]/85 active:scale-95 disabled:bg-zinc-700 disabled:opacity-30"
 				>
 					{tc("actions.share")}
 				</Button>

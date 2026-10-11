@@ -13,6 +13,8 @@ type DominantRegionOptions = {
 	connectZooms?: boolean;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	viewportRatio?: ViewportRatio;
+	/** Where the recording sits on the stage, so cursor-follow zooms aim at the cursor. */
+	cursorFrame?: CursorFrame;
 };
 
 type ConnectedRegionPair = {
@@ -72,12 +74,36 @@ interface ViewportRatio {
 	heightRatio: number;
 }
 
+/**
+ * Where the whole recording sits on the stage, in fractions of the stage. The cursor is
+ * recorded in fractions of the video, zoom focus is a fraction of the stage: with padding
+ * the two differ a little, inside a device mockup they differ a lot.
+ */
+export interface CursorFrame {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+function cursorToStageFocus(cursor: ZoomFocus, frame?: CursorFrame): ZoomFocus {
+	if (!frame) return cursor;
+	return { cx: frame.x + cursor.cx * frame.width, cy: frame.y + cursor.cy * frame.height };
+}
+
+function isSameCursorFrame(a?: CursorFrame, b?: CursorFrame): boolean {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
 function getResolvedFocus(
 	region: ZoomRegion,
 	zoomScale: number,
 	timeMs?: number,
 	cursorTelemetry?: CursorTelemetryPoint[],
 	viewportRatio?: ViewportRatio,
+	cursorFrame?: CursorFrame,
 ): ZoomFocus {
 	let focus = region.focus;
 
@@ -89,7 +115,7 @@ function getResolvedFocus(
 	) {
 		const cursorFocus = interpolateCursorAt(cursorTelemetry, timeMs);
 		if (cursorFocus) {
-			focus = cursorFocus;
+			focus = cursorToStageFocus(cursorFocus, cursorFrame);
 		}
 	}
 
@@ -126,6 +152,7 @@ function getActiveRegion(
 	connectedPairs: ConnectedRegionPair[],
 	cursorTelemetry?: CursorTelemetryPoint[],
 	viewportRatio?: ViewportRatio,
+	cursorFrame?: CursorFrame,
 ) {
 	const activeRegions = regions
 		.map((region) => {
@@ -160,7 +187,14 @@ function getActiveRegion(
 	return {
 		region: {
 			...activeRegion,
-			focus: getResolvedFocus(activeRegion, activeScale, timeMs, cursorTelemetry, viewportRatio),
+			focus: getResolvedFocus(
+				activeRegion,
+				activeScale,
+				timeMs,
+				cursorTelemetry,
+				viewportRatio,
+				cursorFrame,
+			),
 		},
 		strength: activeRegions[0].strength,
 		blendedScale: null,
@@ -173,6 +207,7 @@ function getConnectedRegionHold(
 	connectedPairs: ConnectedRegionPair[],
 	cursorTelemetry?: CursorTelemetryPoint[],
 	viewportRatio?: ViewportRatio,
+	cursorFrame?: CursorFrame,
 ) {
 	for (const pair of connectedPairs) {
 		if (timeMs > pair.transitionEnd && timeMs < pair.nextRegion.startMs) {
@@ -186,6 +221,7 @@ function getConnectedRegionHold(
 						timeMs,
 						cursorTelemetry,
 						viewportRatio,
+						cursorFrame,
 					),
 				},
 				strength: 1,
@@ -203,6 +239,7 @@ function getConnectedRegionTransition(
 	timeMs: number,
 	cursorTelemetry?: CursorTelemetryPoint[],
 	viewportRatio?: ViewportRatio,
+	cursorFrame?: CursorFrame,
 ) {
 	for (const pair of connectedPairs) {
 		const { currentRegion, nextRegion, transitionStart, transitionEnd } = pair;
@@ -218,10 +255,13 @@ function getConnectedRegionTransition(
 		const nextScale = getZoomScale(nextRegion);
 		const transitionScale = lerp(currentScale, nextScale, transitionProgress);
 		// Both regions share the same timeMs, so interpolate cursor once and reuse.
-		const sharedCursorFocus =
+		const rawCursorFocus =
 			cursorTelemetry && cursorTelemetry.length > 0
 				? interpolateCursorAt(cursorTelemetry, timeMs)
 				: null;
+		const sharedCursorFocus = rawCursorFocus
+			? cursorToStageFocus(rawCursorFocus, cursorFrame)
+			: null;
 		const currentFocus = clampFocusToScale(
 			currentRegion.focusMode === "auto" && sharedCursorFocus
 				? sharedCursorFocus
@@ -279,6 +319,7 @@ let dominantRegionCache: {
 	telemetry: CursorTelemetryPoint[] | undefined;
 	connectZooms: boolean;
 	viewportRatio: ViewportRatio | undefined;
+	cursorFrame: CursorFrame | undefined;
 	result: DominantRegionResult;
 } | null = null;
 
@@ -290,6 +331,7 @@ export function findDominantRegion(
 	const connectZooms = !!options.connectZooms;
 	const telemetry = options.cursorTelemetry;
 	const vr = options.viewportRatio;
+	const frame = options.cursorFrame;
 	const timeMsKey = Math.round(timeMs);
 
 	if (
@@ -298,7 +340,8 @@ export function findDominantRegion(
 		dominantRegionCache.timeMsKey === timeMsKey &&
 		dominantRegionCache.telemetry === telemetry &&
 		dominantRegionCache.connectZooms === connectZooms &&
-		dominantRegionCache.viewportRatio === vr
+		dominantRegionCache.viewportRatio === vr &&
+		isSameCursorFrame(dominantRegionCache.cursorFrame, frame)
 	) {
 		return dominantRegionCache.result;
 	}
@@ -307,15 +350,21 @@ export function findDominantRegion(
 
 	let result: DominantRegionResult;
 	if (connectZooms) {
-		const connectedTransition = getConnectedRegionTransition(connectedPairs, timeMs, telemetry, vr);
+		const connectedTransition = getConnectedRegionTransition(
+			connectedPairs,
+			timeMs,
+			telemetry,
+			vr,
+			frame,
+		);
 		if (connectedTransition) {
 			result = connectedTransition;
 		} else {
-			const connectedHold = getConnectedRegionHold(timeMs, connectedPairs, telemetry, vr);
+			const connectedHold = getConnectedRegionHold(timeMs, connectedPairs, telemetry, vr, frame);
 			if (connectedHold) {
 				result = { ...connectedHold, transition: null };
 			} else {
-				const activeRegion = getActiveRegion(regions, timeMs, connectedPairs, telemetry, vr);
+				const activeRegion = getActiveRegion(regions, timeMs, connectedPairs, telemetry, vr, frame);
 				result = activeRegion
 					? { ...activeRegion, transition: null }
 					: {
@@ -328,7 +377,7 @@ export function findDominantRegion(
 			}
 		}
 	} else {
-		const activeRegion = getActiveRegion(regions, timeMs, connectedPairs, telemetry, vr);
+		const activeRegion = getActiveRegion(regions, timeMs, connectedPairs, telemetry, vr, frame);
 		result = activeRegion
 			? { ...activeRegion, transition: null }
 			: {
@@ -346,6 +395,7 @@ export function findDominantRegion(
 		telemetry,
 		connectZooms,
 		viewportRatio: vr,
+		cursorFrame: frame,
 		result,
 	};
 

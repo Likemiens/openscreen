@@ -27,7 +27,6 @@ describe("YandexDiskSettingsPanel", () => {
 				open
 				settings={DISCONNECTED}
 				isRussian={false}
-				bottomOffset={68}
 				onClose={vi.fn()}
 				onSettingsChange={vi.fn()}
 			/>,
@@ -46,7 +45,6 @@ describe("YandexDiskSettingsPanel", () => {
 				open
 				settings={DISCONNECTED}
 				isRussian={false}
-				bottomOffset={68}
 				onClose={vi.fn()}
 				onSettingsChange={vi.fn()}
 			/>,
@@ -82,7 +80,6 @@ describe("YandexDiskSettingsPanel", () => {
 				open
 				settings={DISCONNECTED}
 				isRussian={false}
-				bottomOffset={68}
 				onClose={onClose}
 				onSettingsChange={onSettingsChange}
 			/>,

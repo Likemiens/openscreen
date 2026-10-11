@@ -169,7 +169,7 @@ export function EditorMenuBar(props: EditorMenuBarProps) {
 					</DropdownMenuTrigger>
 					<DropdownMenuContent
 						align="start"
-						className={`bg-[#09090b]/95 backdrop-blur-md border border-white/[0.08] text-slate-200 ${menu.minWidthClass}`}
+						className={`bg-[#161618]/95 backdrop-blur-md border border-white/[0.08] text-slate-200 ${menu.minWidthClass}`}
 					>
 						{menu.items.map((item) => (
 							<Fragment key={item.id}>
