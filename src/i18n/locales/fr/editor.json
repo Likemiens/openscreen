@@ -54,7 +54,7 @@
 		"generate": "Générer",
 		"dialogCancel": "Annuler",
 		"generating": "Génération des sous-titres à partir de l'audio…",
-		"loadingModel": "Chargement du modèle vocal (le premier usage télécharge ~75 MB)…",
+		"loadingModel": "Chargement du modèle vocal (le premier usage télécharge ~250–560 MB)…",
 		"transcribing": "Transcription de la parole…",
 		"busy": "La génération des sous-titres est déjà en cours.",
 		"done": "{{count}} sous-titres ajoutés.",

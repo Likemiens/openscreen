@@ -7,8 +7,11 @@ import { useQuickClip } from "./useQuickClip";
 const runner = vi.hoisted(() => ({ finalizeQuickClip: vi.fn() }));
 vi.mock("@/lib/quickClipRunner", () => runner);
 
-const toastMock = vi.hoisted(() => ({ error: vi.fn(), message: vi.fn() }));
+const toastMock = vi.hoisted(() => ({ error: vi.fn(), message: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastMock }));
+
+const speech = vi.hoisted(() => ({ transcribeVideoFile: vi.fn() }));
+vi.mock("@/lib/captioning/transcribeFile", () => speech);
 
 const RAW = "C:\\data\\recordings\\recording-1.mp4";
 const CLIP = "C:\\Users\\me\\Videos\\OpenScreen\\Recording 1.mp4";
@@ -77,6 +80,9 @@ describe("useQuickClip", () => {
 				path: `C:\\Users\\me\\Videos\\OpenScreen\\${title}.mp4`,
 			})),
 			trashClip: vi.fn(async () => ({ success: true })),
+			saveClipTranscript: vi.fn(async () => ({ success: true })),
+			openClipTranscript: vi.fn(async () => ({ success: true })),
+			copyClipTranscript: vi.fn(async () => ({ success: true })),
 			onYandexDiskUploadStatus: vi.fn((listener) => {
 				uploadListeners.push(listener);
 				return () => {
@@ -102,7 +108,7 @@ describe("useQuickClip", () => {
 			status: "ready",
 			clip: { path: CLIP, title: "Recording 1", share: { status: "idle" } },
 		});
-		expect(window.electronAPI.discardRecordingSource).toHaveBeenCalledWith(RAW);
+		expect(window.electronAPI.discardRecordingSource).toHaveBeenCalledWith(RAW, CLIP);
 		expect(window.electronAPI.setCurrentVideoPath).toHaveBeenCalledWith(CLIP);
 		expect(onConsumed).toHaveBeenCalledTimes(1);
 		expect(onFallbackToDraft).not.toHaveBeenCalled();
@@ -204,5 +210,119 @@ describe("useQuickClip", () => {
 
 		expect(window.electronAPI.trashClip).toHaveBeenCalledWith(CLIP);
 		expect(result.current.state.status).toBe("idle");
+	});
+
+	describe("transcription", () => {
+		beforeEach(() => {
+			speech.transcribeVideoFile.mockReset();
+			toastMock.success.mockClear();
+		});
+
+		it("saves the text and subtitles next to the clip and holds the HUD meanwhile", async () => {
+			let finish: (segments: unknown[]) => void = () => undefined;
+			speech.transcribeVideoFile.mockImplementation(
+				(_path: string, options: { onProgress?: (p: unknown) => void }) => {
+					options.onProgress?.({ phase: "transcribe", fraction: 0.5, kind: "gpu" });
+					return new Promise((resolve) => {
+						finish = resolve;
+					});
+				},
+			);
+			const { result } = await readyClip();
+			vi.mocked(window.electronAPI.setHudBusy).mockClear();
+
+			act(() => {
+				void result.current.transcribeClip();
+			});
+			await waitFor(() =>
+				expect(result.current.state).toMatchObject({
+					clip: { transcript: { status: "working", progress: 0.5, device: "gpu" } },
+				}),
+			);
+			expect(speech.transcribeVideoFile).toHaveBeenCalledWith(CLIP, expect.anything());
+			expect(window.electronAPI.setHudBusy).toHaveBeenLastCalledWith(true);
+
+			await act(async () => {
+				finish([
+					{ startSec: 0, endSec: 2, text: "Коллеги, добрый день." },
+					{ startSec: 2.2, endSec: 4, text: "Начнём." },
+				]);
+			});
+
+			await waitFor(() =>
+				expect(result.current.state).toMatchObject({ clip: { transcript: { status: "done" } } }),
+			);
+			expect(window.electronAPI.saveClipTranscript).toHaveBeenCalledWith(
+				CLIP,
+				"[00:00] Коллеги, добрый день. Начнём.",
+				expect.stringContaining("00:00:00,000 --> 00:00:02,000"),
+			);
+			expect(window.electronAPI.setHudBusy).toHaveBeenLastCalledWith(false);
+			// The card still shows this clip, so no toast is needed.
+			expect(toastMock.success).not.toHaveBeenCalled();
+		});
+
+		it("keeps the HUD held when an upload ends during a transcription", async () => {
+			speech.transcribeVideoFile.mockImplementation(() => new Promise(() => undefined));
+			const { result } = await readyClip();
+
+			await act(async () => {
+				await result.current.shareClip();
+			});
+			act(() => {
+				void result.current.transcribeClip();
+			});
+			emitUpload({ state: "success", publicUrl: "https://yadi.sk/d/x" });
+
+			expect(window.electronAPI.setHudBusy).toHaveBeenLastCalledWith(true);
+		});
+
+		it("goes back to the start when stopped, and reports a recording without speech", async () => {
+			speech.transcribeVideoFile.mockImplementation(
+				(_path: string, options: { signal: AbortSignal }) =>
+					new Promise((_resolve, reject) => {
+						options.signal.addEventListener("abort", () =>
+							reject(new DOMException("Aborted", "AbortError")),
+						);
+					}),
+			);
+			const { result } = await readyClip();
+
+			act(() => {
+				void result.current.transcribeClip();
+			});
+			await waitFor(() =>
+				expect(result.current.state).toMatchObject({ clip: { transcript: { status: "working" } } }),
+			);
+			act(() => result.current.cancelTranscript());
+			await waitFor(() =>
+				expect(result.current.state).toMatchObject({ clip: { transcript: { status: "idle" } } }),
+			);
+
+			speech.transcribeVideoFile.mockResolvedValue([]);
+			await act(async () => {
+				await result.current.transcribeClip();
+			});
+			expect(result.current.state).toMatchObject({
+				clip: {
+					transcript: { status: "error", message: "No speech was heard in this recording." },
+				},
+			});
+			expect(window.electronAPI.saveClipTranscript).not.toHaveBeenCalled();
+		});
+
+		it("does not rename a clip while its transcript is being made", async () => {
+			speech.transcribeVideoFile.mockImplementation(() => new Promise(() => undefined));
+			const { result } = await readyClip();
+
+			act(() => {
+				void result.current.transcribeClip();
+			});
+			await act(async () => {
+				await result.current.renameClip("Weekly sync");
+			});
+
+			expect(window.electronAPI.renameClip).not.toHaveBeenCalled();
+		});
 	});
 });

@@ -53,7 +53,7 @@
 		"generate": "Genera",
 		"dialogCancel": "Annulla",
 		"generating": "Generazione dei sottotitoli dall'audio…",
-		"loadingModel": "Caricamento del modello vocale (al primo utilizzo vengono scaricati ~75 MB)…",
+		"loadingModel": "Caricamento del modello vocale (al primo utilizzo vengono scaricati ~250–560 MB)…",
 		"transcribing": "Trascrizione del parlato…",
 		"busy": "La generazione dei sottotitoli è già in corso.",
 		"done": "Aggiunti {{count}} sottotitoli.",

@@ -8,12 +8,10 @@
     "**/*.node"
   ],
   "productName": "OpenScreen",
-  // Fetch the auto-caption model + ORT wasm into caption-assets/ before packaging (idempotent).
+  // Copy the ONNX Runtime build transcription runs on into speech-runtime/ (idempotent).
   "beforePack": "scripts/before-pack.cjs",
-  "npmRebuild": true,
-  // sharp ships ABI-stable (napi) prebuilt binaries with bundled libvips. Building it from source
-  // needs a system libvips we don't provide and breaks on CI/local ("vips-cpp.42 not found"), so we
-  // let electron-builder use the prebuilt instead of recompiling.
+  // Nothing from node_modules ships (see "files"), so there is nothing to rebuild for Electron.
+  "npmRebuild": false,
   "buildDependenciesFromSource": false,
   "compression": "normal",
   "directories": {
@@ -22,9 +20,17 @@
   "files": [
     "dist",
     "dist-electron",
+    // Vite bundles every dependency into dist/ and dist-electron/; the packaged app never
+    // loads node_modules, which would otherwise add hundreds of MB (onnxruntime-node, sharp,
+    // icon packs) to the installer.
+    "!node_modules",
     // Vite copies public/ into dist/, but the packaged app reads wallpapers from
     // resources/wallpapers (extraResources below): do not ship them twice.
     "!dist/wallpapers",
+    // README illustrations from public/: the app never shows them.
+    "!dist/demo.png",
+    "!dist/sample.png",
+    "!dist/preview*.png",
     "!*.png",
     "!preview*.png",
     "!*.md",
@@ -44,8 +50,8 @@
       "to": "cursors"
     },
     {
-      "from": "caption-assets",
-      "to": "caption-assets"
+      "from": "speech-runtime",
+      "to": "speech-runtime"
     }
   ],
 
@@ -105,7 +111,9 @@
   },
   "nsis": {
     "oneClick": false,
-    "allowToChangeInstallationDirectory": true
+    "allowToChangeInstallationDirectory": true,
+    // Adds the "install transcription or not" page.
+    "include": "scripts/windows-installer.nsh"
   },
   // Microsoft Store packaging identity, from Partner Center's "Product identity" page
   // (Applications et jeux > OpenScreen > Product identity).

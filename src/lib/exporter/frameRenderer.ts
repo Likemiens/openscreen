@@ -66,6 +66,7 @@ import {
 import {
 	computeFramedCompositeLayout,
 	type DeviceFrameSettings,
+	deviceBackShapes,
 	paintDeviceShapes,
 } from "@/lib/deviceFrame";
 import { destroyPixiApp } from "@/lib/pixiDestroy";
@@ -736,7 +737,7 @@ export class FrameRenderer {
 		if (!compositeLayout) return;
 
 		if (this.deviceBackGraphics) {
-			paintDeviceShapes(this.deviceBackGraphics, compositeLayout.deviceFrame?.back);
+			paintDeviceShapes(this.deviceBackGraphics, deviceBackShapes(compositeLayout));
 		}
 		if (this.deviceFrontGraphics) {
 			paintDeviceShapes(this.deviceFrontGraphics, compositeLayout.deviceFrame?.front);

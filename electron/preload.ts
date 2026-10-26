@@ -108,8 +108,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	trashClip: (filePath: string) => {
 		return ipcRenderer.invoke("quick-clip-trash", filePath);
 	},
-	discardRecordingSource: (screenVideoPath: string) => {
-		return ipcRenderer.invoke("quick-clip-discard-source", screenVideoPath);
+	saveClipTranscript: (clipPath: string, text: string, srt: string) => {
+		return ipcRenderer.invoke("quick-clip-save-transcript", clipPath, text, srt);
+	},
+	openClipTranscript: (clipPath: string) => {
+		return ipcRenderer.invoke("quick-clip-open-transcript", clipPath);
+	},
+	copyClipTranscript: (clipPath: string) => {
+		return ipcRenderer.invoke("quick-clip-copy-transcript", clipPath);
+	},
+	isSpeechRecognitionAvailable: (): Promise<boolean> => {
+		return ipcRenderer.invoke("speech-recognition-available");
+	},
+	discardRecordingSource: (screenVideoPath: string, clipPath: string) => {
+		return ipcRenderer.invoke("quick-clip-discard-source", screenVideoPath, clipPath);
 	},
 	setHudOverlayIgnoreMouseEvents: (ignore: boolean) => {
 		ipcRenderer.send("hud-overlay-ignore-mouse-events", ignore);

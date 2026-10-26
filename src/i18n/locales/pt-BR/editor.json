@@ -52,7 +52,7 @@
 		"generate": "Gerar",
 		"dialogCancel": "Cancelar",
 		"generating": "Gerando legendas a partir do áudio…",
-		"loadingModel": "Carregando o modelo de fala (o primeiro uso baixa ~75 MB)…",
+		"loadingModel": "Carregando o modelo de fala (o primeiro uso baixa ~250–560 MB)…",
 		"transcribing": "Transcrevendo a fala…",
 		"busy": "A geração de legendas já está em andamento.",
 		"done": "{{count}} legendas adicionadas.",

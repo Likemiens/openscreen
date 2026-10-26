@@ -1,7 +1,9 @@
 import {
+	Captions,
 	Check,
 	Clapperboard,
 	Copy,
+	FileText,
 	Film,
 	FolderOpen,
 	Link2,
@@ -28,9 +30,21 @@ interface ClipCardProps {
 	onDelete: () => void;
 	onDismiss: () => void;
 	onOpenLink: (url: string) => void;
+	/** Absent when transcription isn't installed: the control is not shown. */
+	onTranscribe?: () => void;
+	onCancelTranscript: () => void;
+	onOpenTranscript: () => void;
+	onCopyTranscript: () => Promise<boolean>;
 }
 
 const COPIED_FEEDBACK_MS = 1_800;
+
+function transcriptStatusText(transcript: ReadyClip["transcript"]): string {
+	if (transcript.status !== "working") return "";
+	const percent = transcript.progress === null ? "" : ` ${Math.round(transcript.progress * 100)}%`;
+	if (transcript.phase === "model") return `Loading the speech model${percent}`;
+	return `Transcribing${percent}${transcript.device === "cpu" ? " · on the processor" : ""}`;
+}
 
 /** The last two folders of the clip's own path, shown as where it was saved. */
 function folderName(filePath: string): string {
@@ -55,9 +69,14 @@ export function ClipCard({
 	onDelete,
 	onDismiss,
 	onOpenLink,
+	onTranscribe,
+	onCancelTranscript,
+	onOpenTranscript,
+	onCopyTranscript,
 }: ClipCardProps) {
 	const [title, setTitle] = useState(clip.title);
 	const [fileCopied, setFileCopied] = useState(false);
+	const [textCopied, setTextCopied] = useState(false);
 
 	useEffect(() => {
 		setTitle(clip.title);
@@ -69,8 +88,16 @@ export function ClipCard({
 		return () => window.clearTimeout(timer);
 	}, [fileCopied]);
 
+	useEffect(() => {
+		if (!textCopied) return;
+		const timer = window.setTimeout(() => setTextCopied(false), COPIED_FEEDBACK_MS);
+		return () => window.clearTimeout(timer);
+	}, [textCopied]);
+
 	const share = clip.share;
 	const uploading = share.status === "uploading";
+	const transcript = clip.transcript;
+	const transcribing = transcript.status === "working";
 	const commitTitle = () => {
 		if (title.trim() && title !== clip.title) onRename(title);
 		else setTitle(clip.title);
@@ -110,8 +137,9 @@ export function ClipCard({
 							value={title}
 							aria-label="Clip name"
 							spellCheck={false}
-							// The uploader reads the file by path; renaming it mid-upload would break both.
-							disabled={uploading}
+							// The uploader reads the file by path, and the transcript is saved under its
+							// name: renaming mid-way would break either.
+							disabled={uploading || transcribing}
 							className={styles.titleInput}
 							onChange={(event) => setTitle(event.target.value)}
 							onBlur={commitTitle}
@@ -186,6 +214,45 @@ export function ClipCard({
 					)}
 					{fileCopied ? "Copied" : "Copy file"}
 				</button>
+				{onTranscribe && (
+					<Tooltip
+						content={
+							transcribing
+								? "Stop transcribing"
+								: transcript.status === "done"
+									? "Open the transcript"
+									: "Transcribe to text and subtitles"
+						}
+					>
+						<button
+							type="button"
+							data-testid="hud-clip-transcribe"
+							aria-label={
+								transcribing
+									? "Stop transcribing"
+									: transcript.status === "done"
+										? "Open the transcript"
+										: "Transcribe"
+							}
+							className={`${styles.button} ${styles.iconOnly}`}
+							onClick={
+								transcribing
+									? onCancelTranscript
+									: transcript.status === "done"
+										? onOpenTranscript
+										: onTranscribe
+							}
+						>
+							{transcribing ? (
+								<Loader2 size={14} className={styles.spinner} aria-hidden="true" />
+							) : transcript.status === "done" ? (
+								<FileText size={14} aria-hidden="true" />
+							) : (
+								<Captions size={14} aria-hidden="true" />
+							)}
+						</button>
+					</Tooltip>
+				)}
 				<Tooltip content="Show in folder">
 					<button
 						type="button"
@@ -238,6 +305,49 @@ export function ClipCard({
 			{share.status === "error" && (
 				<div className={`${styles.caption} ${styles.statusError} mt-2`} role="alert">
 					{share.message}
+				</div>
+			)}
+			{transcribing && (
+				<div className="mt-2.5" data-testid="hud-clip-transcript-status">
+					<div className={styles.progressTrack}>
+						<div
+							className={styles.progressFill}
+							style={{ transform: `scaleX(${Math.max(0.02, transcript.progress ?? 0)})` }}
+						/>
+					</div>
+					<div className={`${styles.caption} mt-1.5 tabular-nums`} aria-live="polite">
+						{transcriptStatusText(transcript)}
+					</div>
+				</div>
+			)}
+			{transcript.status === "done" && (
+				<div
+					className={`${styles.caption} mt-2 flex items-center gap-1.5`}
+					data-testid="hud-clip-transcript-status"
+				>
+					<Check size={12} className={styles.statusOk} aria-hidden="true" />
+					<span className="truncate">Transcript and subtitles saved</span>
+					<button
+						type="button"
+						className={`${styles.link} ml-auto`}
+						onClick={() => {
+							void onCopyTranscript().then((copied) => setTextCopied(copied));
+						}}
+					>
+						{textCopied ? "Copied" : "Copy text"}
+					</button>
+					<button type="button" className={styles.link} onClick={onOpenTranscript}>
+						Open
+					</button>
+				</div>
+			)}
+			{transcript.status === "error" && (
+				<div
+					className={`${styles.caption} ${styles.statusError} mt-2`}
+					role="alert"
+					data-testid="hud-clip-transcript-status"
+				>
+					{transcript.message}
 				</div>
 			)}
 		</div>

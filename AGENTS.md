@@ -21,6 +21,8 @@ OpenScreen is a free, open-source screen recorder and video editor (Electron + R
 - `src/lib/deviceFrame.ts` — device mockup geometry and fixed screen proportions, shared by the preview (`videoPlayback/layoutUtils.ts`) and the exporter (`exporter/frameRenderer.ts`); change the frame there, never in one renderer only
 - `src/components/video-editor/timeline/clipPieces.ts` + `ClipTrack.tsx` — the clip row: the video as pieces; a removed piece is a `TrimRegion`, split points are `clipSplits` in editor state
 - `src/components/video-editor/studioControls.tsx` — the Studio inspector's building blocks (section, segmented, slider row, select, number field, toggle); `FramePanel.tsx` is the reference use
+- `src/lib/captioning/` — transcription (Whisper via transformers.js in a worker) and the `.txt`/`.srt` writers; the models are not bundled: `electron/ipc/speechModels.ts` downloads them on first use into `<userData>/speech-models` and serves them, and the ONNX runtime, over `openscreen-asr://` (decision D-025). In a headless check, copy a filled `speech-models` folder into the temp profile to skip the download
+- Packaging ships no `node_modules` (`"!node_modules"` in `electron-builder.json5`): main and preload are bundled by Vite. A dependency the main process must load from `node_modules` at runtime (a native module) has to be added back to `files`
 - `electron/` — main process, IPC, recording orchestration
 - `electron/native/` — **native** capture helpers: `screencapturekit/` (Swift, macOS) and `wgc-capture/` (C++/Win32, Windows). These are built and shipped with the app, not loaded from npm
 - `docs/` — architecture, engineering roadmaps, testing guides

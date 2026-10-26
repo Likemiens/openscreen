@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { type ReadyClip, useQuickClip } from "@/hooks/useQuickClip";
 import { useRecordingRecipes } from "@/hooks/useRecordingRecipes";
+import { useSpeechRecognitionAvailable } from "@/hooks/useSpeechRecognitionAvailable";
 import { type AppSettingsView, formatAccelerator } from "@/lib/appSettings";
 import { formatRegionSize } from "@/lib/captureRegion";
 import type { CaptureMode } from "@/lib/captureSettings";
@@ -58,6 +59,11 @@ type HudPanel = "format" | "settings" | "yandex" | "presets";
 
 const ICON_SIZE = 17;
 const ICON_STROKE = 1.9;
+// A take this short is cheap to redo, so Restart and Delete act at once; a longer one
+// (a meeting, a lecture) asks for a second click before it is thrown away.
+const DISCARD_CONFIRM_AFTER_SECONDS = 15;
+const DISCARD_CONFIRM_MS = 3000;
+const DISCARD_ARMED_CLASS = "!bg-[var(--hud-red-soft)] !text-[var(--hud-red)]";
 
 // Transparent margin around the content so shadows never reach the window edge and
 // tooltips above the topmost surface have room to render.
@@ -77,6 +83,7 @@ const PREVIEW_CLIP: ReadyClip = {
 	mode: "transcode",
 	thumbnail: null,
 	share: { status: "idle" },
+	transcript: { status: "idle" },
 };
 
 function isHudPanel(value: string | null): value is HudPanel {
@@ -163,7 +170,16 @@ export function LaunchWindow() {
 			: null,
 	);
 	const [supportsCursorModeToggle, setSupportsCursorModeToggle] = useState(false);
+	// Restart and Delete throw the take away. Past the first seconds of a recording the
+	// first click only arms the button; it has to be clicked again within a moment.
+	const [armedDiscard, setArmedDiscard] = useState<"restart" | "delete" | null>(null);
+	useEffect(() => {
+		if (!armedDiscard) return;
+		const timer = window.setTimeout(() => setArmedDiscard(null), DISCARD_CONFIRM_MS);
+		return () => window.clearTimeout(timer);
+	}, [armedDiscard]);
 	const [isLinuxHud, setIsLinuxHud] = useState(false);
+	const speechAvailable = useSpeechRecognitionAvailable();
 
 	const quickClip = useQuickClip({
 		draft: completedRecording,
@@ -527,6 +543,16 @@ export function LaunchWindow() {
 		void requestSource(mode).catch((error) => {
 			console.warn("Failed to open the source picker:", error);
 		});
+	};
+
+	const confirmDiscard = (action: "restart" | "delete") => {
+		if (elapsedSeconds >= DISCARD_CONFIRM_AFTER_SECONDS && armedDiscard !== action) {
+			setArmedDiscard(action);
+			return;
+		}
+		setArmedDiscard(null);
+		if (action === "restart") void restartRecording();
+		else void cancelRecording();
 	};
 
 	const handleRecordButtonClick = () => {
@@ -1075,6 +1101,10 @@ export function LaunchWindow() {
 							onShare={() => void quickClip.shareClip()}
 							onConnectYandex={() => setOpenPanel("yandex")}
 							onCopyFile={quickClip.copyClipFile}
+							onTranscribe={speechAvailable ? () => void quickClip.transcribeClip() : undefined}
+							onCancelTranscript={quickClip.cancelTranscript}
+							onOpenTranscript={() => void quickClip.openTranscript()}
+							onCopyTranscript={quickClip.copyTranscript}
 							onReveal={quickClip.revealClip}
 							onStartDrag={quickClip.startClipDrag}
 							onOpenStudio={() => void quickClip.openClipInStudio()}
@@ -1131,22 +1161,34 @@ export function LaunchWindow() {
 									</button>
 								</Tooltip>
 							)}
-							<Tooltip content={t("tooltips.restartRecording")}>
+							<Tooltip
+								content={
+									armedDiscard === "restart"
+										? "Click again to discard this recording and start over"
+										: t("tooltips.restartRecording")
+								}
+							>
 								<button
 									type="button"
-									aria-label="Restart"
-									className={styles.control}
-									onClick={() => restartRecording()}
+									aria-label={armedDiscard === "restart" ? "Confirm restart" : "Restart"}
+									className={`${styles.control} ${armedDiscard === "restart" ? DISCARD_ARMED_CLASS : ""}`}
+									onClick={() => confirmDiscard("restart")}
 								>
 									<RotateCcw size={ICON_SIZE} strokeWidth={ICON_STROKE} />
 								</button>
 							</Tooltip>
-							<Tooltip content={t("tooltips.cancelRecording")}>
+							<Tooltip
+								content={
+									armedDiscard === "delete"
+										? "Click again to delete this recording"
+										: t("tooltips.cancelRecording")
+								}
+							>
 								<button
 									type="button"
-									aria-label="Delete"
-									className={styles.control}
-									onClick={() => cancelRecording()}
+									aria-label={armedDiscard === "delete" ? "Confirm delete" : "Delete"}
+									className={`${styles.control} ${armedDiscard === "delete" ? DISCARD_ARMED_CLASS : ""}`}
+									onClick={() => confirmDiscard("delete")}
 								>
 									<Trash2 size={ICON_SIZE} strokeWidth={ICON_STROKE} />
 								</button>

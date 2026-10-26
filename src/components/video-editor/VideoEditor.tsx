@@ -24,6 +24,7 @@ import {
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { INITIAL_EDITOR_STATE, useEditorHistory } from "@/hooks/useEditorHistory";
+import { useSpeechRecognitionAvailable } from "@/hooks/useSpeechRecognitionAvailable";
 import {
 	captionSegmentsToAnnotationRegions,
 	extractMono16kFromVideoUrl,
@@ -376,6 +377,7 @@ export default function VideoEditor() {
 	const isAutoCaptioningRef = useRef(false);
 	const [isAutoCaptioning, setIsAutoCaptioning] = useState(false);
 	const [showAutoCaptionsDialog, setShowAutoCaptionsDialog] = useState(false);
+	const speechAvailable = useSpeechRecognitionAvailable();
 	const [captionWordsMin, setCaptionWordsMin] = useState(2);
 	const [captionWordsMax, setCaptionWordsMax] = useState(7);
 	const exporterRef = useRef<VideoExporter | null>(null);
@@ -3556,17 +3558,21 @@ export default function VideoEditor() {
 									showTrimWaveform={showTrimWaveform}
 									captionsLabel={t("autoCaptions.button")}
 									isGeneratingCaptions={isAutoCaptioning}
-									onGenerateCaptions={() => {
-										if (!videoPath) {
-											toast.error(t("errors.noVideoLoaded"));
-											return;
-										}
-										if (isAutoCaptioningRef.current) {
-											toast.error(t("autoCaptions.busy"));
-											return;
-										}
-										setShowAutoCaptionsDialog(true);
-									}}
+									onGenerateCaptions={
+										speechAvailable
+											? () => {
+													if (!videoPath) {
+														toast.error(t("errors.noVideoLoaded"));
+														return;
+													}
+													if (isAutoCaptioningRef.current) {
+														toast.error(t("autoCaptions.busy"));
+														return;
+													}
+													setShowAutoCaptionsDialog(true);
+												}
+											: undefined
+									}
 								/>
 							</div>
 						</Panel>

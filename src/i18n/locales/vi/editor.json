@@ -54,7 +54,7 @@
 		"generate": "Tạo",
 		"dialogCancel": "Hủy",
 		"generating": "Đang tạo phụ đề từ âm thanh…",
-		"loadingModel": "Đang tải mô hình giọng nói (lần đầu sử dụng sẽ tải ~75 MB)…",
+		"loadingModel": "Đang tải mô hình giọng nói (lần đầu sử dụng sẽ tải ~250–560 MB)…",
 		"transcribing": "Đang chuyển lời nói thành văn bản…",
 		"busy": "Việc tạo phụ đề đang được tiến hành.",
 		"done": "Đã thêm {{count}} phụ đề.",

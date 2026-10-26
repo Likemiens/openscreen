@@ -28,6 +28,8 @@ export interface QuickClipPlanInput {
 	quality: ExportQuality;
 	frameRate: Mp4FrameRate;
 	region?: CaptureRegion | null;
+	/** Length of the recording, when known. */
+	durationSeconds?: number | null;
 }
 
 export type QuickClipPlan =
@@ -58,6 +60,12 @@ const FRAME_RATE_TOLERANCE = 2;
 // H.264 encoders commonly stop at 4096 px per side and about 4096 x 2304 pixels in
 // total (level 5.x). A larger crop — an ultrawide or 5K display at Original quality —
 // is scaled down to fit rather than handed to an encoder that would refuse it.
+// A meeting or a lecture is not a clip to shrink for sharing: re-encoding an hour of
+// video takes minutes and puts the only copy through a conversion. From this length on
+// a recording is saved exactly as recorded, the moment it stops, whatever the quality
+// setting says. (An area recording still has to be cropped: the file holds the whole
+// display.)
+export const LONG_RECORDING_SECONDS = 5 * 60;
 const MAX_ENCODE_SIDE = 4096;
 const MAX_ENCODE_PIXELS = 4096 * 2304;
 
@@ -91,7 +99,9 @@ export function planQuickClip(input: QuickClipPlanInput): QuickClipPlan {
 		Number.isFinite(input.sourceFrameRate) &&
 		input.sourceFrameRate > input.frameRate + FRAME_RATE_TOLERANCE;
 
-	if (!crop && scale === 1 && !resampleFrameRate && input.sourceIsMp4) {
+	const isLong = (input.durationSeconds ?? 0) >= LONG_RECORDING_SECONDS;
+	const matchesOutput = scale === 1 && !resampleFrameRate;
+	if (!crop && input.sourceIsMp4 && (matchesOutput || isLong)) {
 		return { mode: "copy", width: sourceWidth, height: sourceHeight };
 	}
 

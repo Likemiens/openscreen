@@ -5,6 +5,7 @@ import {
 	canFinalizeQuickClip,
 	formatClipDuration,
 	formatFileSize,
+	LONG_RECORDING_SECONDS,
 	planQuickClip,
 } from "./quickClip";
 
@@ -34,6 +35,40 @@ describe("canFinalizeQuickClip", () => {
 		expect(
 			canFinalizeQuickClip({ cursorCaptureMode: "editable-overlay", hasWebcamTrack: false }),
 		).toBe(false);
+	});
+});
+
+describe("planQuickClip for long recordings", () => {
+	const meeting = {
+		sourceWidth: 2560,
+		sourceHeight: 1440,
+		sourceFrameRate: 60,
+		sourceIsMp4: true,
+		quality: "good" as const,
+		frameRate: 30 as const,
+	};
+
+	it("saves a long recording exactly as recorded instead of re-encoding it", () => {
+		// A short clip from the same display is shrunk to 1080p30 for sharing...
+		expect(planQuickClip({ ...meeting, durationSeconds: 40 }).mode).toBe("transcode");
+		// ...but an hour-long meeting is the original file, available at once.
+		expect(planQuickClip({ ...meeting, durationSeconds: 3600 })).toEqual({
+			mode: "copy",
+			width: 2560,
+			height: 1440,
+		});
+		expect(planQuickClip({ ...meeting, durationSeconds: LONG_RECORDING_SECONDS }).mode).toBe(
+			"copy",
+		);
+	});
+
+	it("still crops a long area recording: the file holds the whole display", () => {
+		const plan = planQuickClip({
+			...meeting,
+			durationSeconds: 3600,
+			region: REGION,
+		});
+		expect(plan.mode).toBe("transcode");
 	});
 });
 

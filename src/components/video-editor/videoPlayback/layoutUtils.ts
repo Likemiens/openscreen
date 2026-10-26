@@ -9,6 +9,7 @@ import type {
 import {
 	computeFramedCompositeLayout,
 	type DeviceFrameSettings,
+	deviceBackShapes,
 	paintDeviceShapes,
 } from "@/lib/deviceFrame";
 import type { CropRegion, WebcamMaskShape } from "../types";
@@ -163,7 +164,7 @@ export function layoutVideoContent(params: LayoutParams): LayoutResult | null {
 	);
 	maskGraphics.fill({ color: 0xffffff });
 
-	if (deviceBackGraphics) paintDeviceShapes(deviceBackGraphics, compositeLayout.deviceFrame?.back);
+	if (deviceBackGraphics) paintDeviceShapes(deviceBackGraphics, deviceBackShapes(compositeLayout));
 	if (deviceFrontGraphics) {
 		paintDeviceShapes(deviceFrontGraphics, compositeLayout.deviceFrame?.front);
 	}

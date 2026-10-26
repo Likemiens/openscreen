@@ -1,7 +1,16 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import electron from "vite-plugin-electron/simple";
+
+function onnxRuntimeWebGpu(): string {
+	const candidates = [
+		"node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort.webgpu.min.mjs",
+		"node_modules/onnxruntime-web/dist/ort.webgpu.min.mjs",
+	].map((file) => path.resolve(__dirname, file));
+	return candidates.find((file) => existsSync(file)) ?? candidates[0];
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -28,19 +37,18 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "src"),
-			// @xenova/transformers: env.js statically imports fs/path/url; onnx.js imports
-			// onnxruntime-node (must not be bundled in the renderer — it requires fs).
-			fs: path.resolve(__dirname, "src/lib/vite-stubs/empty-node-module.ts"),
-			path: path.resolve(__dirname, "src/lib/vite-stubs/empty-node-module.ts"),
-			url: path.resolve(__dirname, "src/lib/vite-stubs/empty-node-module.ts"),
-			"onnxruntime-node": path.resolve(__dirname, "src/lib/vite-stubs/onnxruntime-node-stub.ts"), // re-exports web ORT
+			// ONNX Runtime's "extern wasm" build: it loads its wasm and threading glue from the
+			// paths the transcription worker gives it (served by the main process), so they are
+			// not bundled into dist/ a second time.
+			"onnxruntime-web/webgpu": onnxRuntimeWebGpu(),
 		},
 	},
 	optimizeDeps: {
-		exclude: ["@xenova/transformers"],
+		// Its ONNX Runtime loads wasm next to itself; pre-bundling would move it.
+		exclude: ["@huggingface/transformers"],
 	},
-	// The captioning worker dynamically imports @xenova/transformers, which makes the
-	// worker bundle code-split — unsupported by the default "iife" worker format.
+	// The transcription worker bundles transformers.js, which code-splits — unsupported
+	// by the default "iife" worker format.
 	worker: {
 		format: "es",
 	},

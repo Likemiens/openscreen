@@ -213,6 +213,18 @@ async function prepareSupplementalPreviewAudioTrack(videoPath: string) {
 	return { success: true, path: pathToFileURL(outputPath).toString() };
 }
 
+/**
+ * A take discarded with Restart or Delete goes to the system trash rather than into
+ * thin air, so a misclick an hour into a recording can still be undone.
+ */
+async function discardRecordingFile(filePath: string) {
+	try {
+		await shell.trashItem(filePath);
+	} catch {
+		await fs.rm(filePath, { force: true });
+	}
+}
+
 async function approveReadableVideoPath(
 	filePath?: string | null,
 	trustedDirs?: string[],
@@ -2094,8 +2106,8 @@ export function registerIpcHandlers(
 			if (discard) {
 				pendingCursorRecordingData = null;
 				await Promise.all([
-					fs.rm(screenVideoPath, { force: true }),
-					preferredWebcamPath ? fs.rm(preferredWebcamPath, { force: true }) : Promise.resolve(),
+					discardRecordingFile(screenVideoPath),
+					preferredWebcamPath ? discardRecordingFile(preferredWebcamPath) : Promise.resolve(),
 					fs.rm(`${screenVideoPath}.cursor.json`, { force: true }),
 				]);
 				return { success: true, discarded: true };
@@ -2187,7 +2199,7 @@ export function registerIpcHandlers(
 			if (discard) {
 				pendingCursorRecordingData = null;
 				await Promise.all([
-					fs.rm(screenVideoPath, { force: true }),
+					discardRecordingFile(screenVideoPath),
 					fs.rm(`${screenVideoPath}.cursor.json`, { force: true }),
 				]);
 				return { success: true, discarded: true };

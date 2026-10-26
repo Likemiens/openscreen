@@ -1,3 +1,4 @@
+import { Color, FillGradient } from "pixi.js";
 import {
 	computeCompositeLayout,
 	type RenderRect,
@@ -150,17 +151,44 @@ export function isFullBleedCameraLayout(preset?: WebcamLayoutPreset | null): boo
 	return preset === "vertical-stack" || preset === "dual-frame";
 }
 
+/** A colour stop; `offset` runs 0–1 along the gradient. */
+export interface GradientStop {
+	offset: number;
+	color: number;
+	alpha?: number;
+}
+
+/**
+ * A gradient laid out in the shape's own box (0–1 on both axes), so it stretches with
+ * the shape at any size. A radial one is centred on the shape and reaches its edges.
+ */
+export type ShapeGradient =
+	| { type: "linear"; from: [number, number]; to: [number, number]; stops: GradientStop[] }
+	| { type: "radial"; stops: GradientStop[] };
+
+export interface ShapePaint {
+	/** The fill; with a gradient, the colour it is closest to. */
+	color: number;
+	alpha?: number;
+	gradient?: ShapeGradient;
+	stroke?: { width: number; color: number; alpha?: number };
+	/** Only the outline is drawn. */
+	hollow?: boolean;
+	/** What the shape is (for tests and debugging). */
+	part?: string;
+}
+
 export type DeviceShape =
-	| {
+	| ({
 			type: "roundRect";
 			x: number;
 			y: number;
 			width: number;
 			height: number;
 			radius: number;
-			color: number;
-	  }
-	| { type: "circle"; x: number; y: number; radius: number; color: number };
+	  } & ShapePaint)
+	| ({ type: "circle"; x: number; y: number; radius: number } & ShapePaint)
+	| ({ type: "poly"; points: number[] } & ShapePaint);
 
 export interface DeviceFrameLayout {
 	kind: Exclude<DeviceFrameKind, "none">;
@@ -168,8 +196,10 @@ export interface DeviceFrameLayout {
 	screen: RenderRect;
 	/** Corner radius the video is clipped to so it follows the device's screen. */
 	screenRadius: number;
-	/** Outer bounds of everything the frame draws. */
+	/** Outer bounds of the device itself (its shadow may reach past them). */
 	bounds: RenderRect;
+	/** Soft shadow the device casts on the background; painted first. */
+	shadow: DeviceShape[];
 	/** Painted behind the video, in order. */
 	back: DeviceShape[];
 	/** Painted over the video, in order. */
@@ -187,8 +217,8 @@ interface Insets {
 
 // Every measurement below is a fraction of the screen's shorter side, so a frame keeps
 // its proportions at any preview or export size.
-const PHONE = { band: 0.012, bezel: 0.03, screenRadius: 0.09, button: 0.006 };
-const TABLET = { band: 0.01, bezel: 0.046, screenRadius: 0.03 };
+const PHONE = { band: 0.014, bezel: 0.03, screenRadius: 0.09, button: 0.006 };
+const TABLET = { band: 0.011, bezel: 0.046, screenRadius: 0.03 };
 const LAPTOP = {
 	side: 0.03,
 	top: 0.046,
@@ -200,7 +230,7 @@ const LAPTOP = {
 	baseHeight: 0.05,
 	baseOverlap: 0.004,
 };
-const BROWSER = { bar: 0.085, border: 0.008, radius: 0.03 };
+const BROWSER = { bar: 0.085, border: 0.003, radius: 0.03 };
 
 const INSETS: Record<FramedKind, Insets> = {
 	phone: uniform(PHONE.band + PHONE.bezel + PHONE.button),
@@ -223,26 +253,99 @@ function uniform(value: number): Insets {
 	return { top: value, right: value, bottom: value, left: value };
 }
 
-interface Palette {
-	/** The metal band / lid / window chrome. */
-	band: number;
-	/** A darker tone of the band for buttons and edges. */
-	shade: number;
-	/** Address field inside a browser bar. */
-	field: number;
+/** A metal body: its darkest edge, its lit face, the shade it falls into, its glint. */
+interface Material {
+	edge: number;
+	dark: number;
+	base: number;
+	light: number;
 }
 
-const PALETTES: Record<DeviceFrameColor, Palette> = {
-	graphite: { band: 0x55565b, shade: 0x38393d, field: 0x3d3e43 },
-	silver: { band: 0xdcdde0, shade: 0xb7b8bc, field: 0xf6f6f7 },
-	black: { band: 0x1f1f22, shade: 0x101012, field: 0x2f2f33 },
-	white: { band: 0xf5f3ef, shade: 0xd8d5cf, field: 0xe6e3de },
+const MATERIALS: Record<DeviceFrameColor, Material> = {
+	graphite: { edge: 0x1d1e21, dark: 0x3a3b3f, base: 0x5b5c61, light: 0xa3a4aa },
+	silver: { edge: 0x8c8d92, dark: 0xb0b1b6, base: 0xdcdde0, light: 0xffffff },
+	black: { edge: 0x080809, dark: 0x19191b, base: 0x2e2e31, light: 0x6c6d73 },
+	white: { edge: 0xa7a39c, dark: 0xcfcbc4, base: 0xf1eee9, light: 0xffffff },
+};
+
+/** Browser window chrome, light or dark like the system appearance. */
+interface Chrome {
+	barTop: number;
+	barBottom: number;
+	line: number;
+	field: number;
+	fieldLine: number;
+	icon: number;
+	text: number;
+}
+
+const LIGHT_CHROME: Chrome = {
+	barTop: 0xf6f6f8,
+	barBottom: 0xebebee,
+	line: 0xd2d2d7,
+	field: 0xffffff,
+	fieldLine: 0xdddde2,
+	icon: 0x86868b,
+	text: 0xbdbdc2,
+};
+const DARK_CHROME: Chrome = {
+	barTop: 0x3a3a3d,
+	barBottom: 0x2f2f32,
+	line: 0x141416,
+	field: 0x48484b,
+	fieldLine: 0x525256,
+	icon: 0x9a9a9f,
+	text: 0x76767b,
+};
+const CHROMES: Record<DeviceFrameColor, Chrome> = {
+	silver: LIGHT_CHROME,
+	white: { ...LIGHT_CHROME, barTop: 0xfcfbf9, barBottom: 0xf1efec },
+	graphite: DARK_CHROME,
+	black: {
+		...DARK_CHROME,
+		barTop: 0x262628,
+		barBottom: 0x1e1e20,
+		field: 0x38383b,
+		fieldLine: 0x414145,
+	},
 };
 
 /** Glass and bezels are black whatever the body colour, as on real devices. */
 const BEZEL_COLOR = 0x060607;
+const CUTOUT_COLOR = 0x000000;
 const LENS_COLOR = 0x1b1b22;
-const TRAFFIC_LIGHTS = [0xff5f57, 0xfebc2e, 0x28c840];
+const TRAFFIC_LIGHTS: Array<[fill: number, rim: number]> = [
+	[0xff5f57, 0xe0443e],
+	[0xfebc2e, 0xdea123],
+	[0x28c840, 0x1aab29],
+];
+
+const DOWN: [[number, number], [number, number]] = [
+	[0.5, 0],
+	[0.5, 1],
+];
+const ACROSS: [[number, number], [number, number]] = [
+	[0, 0.5],
+	[1, 0.5],
+];
+const DIAGONAL: [[number, number], [number, number]] = [
+	[0, 0],
+	[1, 1],
+];
+
+function linear(
+	[from, to]: [[number, number], [number, number]],
+	stops: Array<[offset: number, color: number, alpha?: number]>,
+): ShapeGradient {
+	return {
+		type: "linear",
+		from,
+		to,
+		stops: stops.map(([offset, color, alpha]) =>
+			alpha === undefined ? { offset, color } : { offset, color, alpha },
+		),
+	};
+}
 
 /**
  * Shrinks the box the video may occupy so that the frame around it still fits in the
@@ -280,27 +383,20 @@ export function offsetScreenForDevice(screen: RenderRect, kind: FramedKind): Ren
 	};
 }
 
-function roundRect(
-	x: number,
-	y: number,
-	width: number,
-	height: number,
-	radius: number,
-	color: number,
-): DeviceShape {
+function roundRect(rect: RenderRect, radius: number, paint: ShapePaint): DeviceShape {
 	return {
 		type: "roundRect",
-		x,
-		y,
-		width,
-		height,
-		radius: Math.max(0, Math.min(radius, width / 2, height / 2)),
-		color,
+		x: rect.x,
+		y: rect.y,
+		width: rect.width,
+		height: rect.height,
+		radius: Math.max(0, Math.min(radius, rect.width / 2, rect.height / 2)),
+		...paint,
 	};
 }
 
-function circle(x: number, y: number, radius: number, color: number): DeviceShape {
-	return { type: "circle", x, y, radius, color };
+function circle(x: number, y: number, radius: number, paint: ShapePaint): DeviceShape {
+	return { type: "circle", x, y, radius, ...paint };
 }
 
 function expand(rect: RenderRect, by: number): RenderRect {
@@ -312,24 +408,126 @@ function expand(rect: RenderRect, by: number): RenderRect {
 	};
 }
 
+/**
+ * A polished metal rim of `width`: a dark outer edge, the band catching the light, and
+ * a shaded lip where it turns in to meet the glass.
+ */
+function metalRim(outer: RenderRect, radius: number, width: number, m: Material): DeviceShape[] {
+	const edge = width * 0.14;
+	const lip = width * 0.62;
+	return [
+		roundRect(outer, radius, { color: m.edge, part: "body" }),
+		roundRect(expand(outer, -edge), radius - edge, {
+			color: m.base,
+			gradient: linear(DIAGONAL, [
+				[0, m.light],
+				[0.22, m.base],
+				[0.5, m.dark],
+				[0.78, m.base],
+				[1, m.light],
+			]),
+		}),
+		roundRect(expand(outer, -lip), radius - lip, {
+			color: m.dark,
+			gradient: linear(DIAGONAL, [
+				[0, m.dark],
+				[0.5, m.base],
+				[1, m.dark],
+			]),
+		}),
+	];
+}
+
+/** Black glass with a faint reflection where it meets the rim. */
+function glass(rect: RenderRect, radius: number, u: number): DeviceShape {
+	return roundRect(rect, radius, {
+		color: BEZEL_COLOR,
+		gradient: linear(DOWN, [
+			[0, 0x141416],
+			[1, BEZEL_COLOR],
+		]),
+		stroke: { width: 0.0016 * u, color: 0x3c3c41, alpha: 0.9 },
+		part: "glass",
+	});
+}
+
+/** A camera lens: a dark well with a bluish glint. */
+function lens(x: number, y: number, radius: number): DeviceShape[] {
+	return [
+		circle(x, y, radius, { color: 0x0a0a0e }),
+		circle(x, y, radius * 0.62, {
+			color: LENS_COLOR,
+			gradient: {
+				type: "radial",
+				stops: [
+					{ offset: 0, color: 0x46577a },
+					{ offset: 0.5, color: 0x161c2c },
+					{ offset: 1, color: 0x07070b },
+				],
+			},
+		}),
+	];
+}
+
+/** A metal key on the side of a phone, rounded across its width. */
+function sideButton(rect: RenderRect, onLongEdgeX: boolean, m: Material): DeviceShape {
+	const across = onLongEdgeX ? ACROSS : DOWN;
+	return roundRect(rect, Math.min(rect.width, rect.height) / 2, {
+		color: m.base,
+		gradient: linear(across, [
+			[0, m.dark],
+			[0.35, m.light],
+			[0.7, m.base],
+			[1, m.dark],
+		]),
+		stroke: {
+			width: Math.min(rect.width, rect.height) * 0.12,
+			color: m.edge,
+			alpha: 0.6,
+		},
+	});
+}
+
+/** A soft shadow under `rect`, built from faint layers that spread further each time. */
+function softShadow(rect: RenderRect, radius: number, u: number, strength = 1): DeviceShape[] {
+	const shapes: DeviceShape[] = [];
+	const lowered = { ...rect, y: rect.y + 0.03 * u };
+	for (let i = 0; i < 10; i += 1) {
+		const spread = (i + 1) * 0.008 * u;
+		shapes.push(
+			roundRect(expand(lowered, spread - 0.02 * u), radius + spread, {
+				color: 0x000000,
+				alpha: 0.032 * strength,
+				part: "shadow",
+			}),
+		);
+	}
+	return shapes;
+}
+
+type FrameParts = Pick<DeviceFrameLayout, "back" | "front" | "screenRadius" | "shadow">;
+
 function layoutPhone(
 	screen: RenderRect,
 	settings: DeviceFrameSettings,
-	palette: Palette,
+	m: Material,
 	portrait: boolean,
-): Pick<DeviceFrameLayout, "back" | "front" | "screenRadius"> {
+): FrameParts {
 	const u = Math.min(screen.width, screen.height);
 	const screenRadius = PHONE.screenRadius * u;
 	const bezel = expand(screen, PHONE.bezel * u);
-	const band = expand(bezel, PHONE.band * u);
+	const body = expand(bezel, PHONE.band * u);
+	const bodyRadius = screenRadius + (PHONE.bezel + PHONE.band) * u;
 	const buttonDepth = (PHONE.button + PHONE.band) * u;
 	const back: DeviceShape[] = [];
 
-	// Side buttons sit on the long edges and peek out from behind the band.
-	const longSide = portrait ? band.height : band.width;
+	// Side buttons sit on the long edges and peek out from behind the band: the action
+	// button and the volume keys on one side, the side button on the other.
+	const longSide = portrait ? body.height : body.width;
 	const buttons: Array<{ start: number; length: number; far: boolean }> = [
-		{ start: 0.2, length: 0.07, far: false },
-		{ start: 0.29, length: 0.07, far: false },
+		{ start: 0.165, length: 0.045, far: false },
+		{ start: 0.235, length: 0.075, far: false },
+		{ start: 0.33, length: 0.075, far: false },
 		{ start: 0.27, length: 0.11, far: true },
 	];
 	for (const button of buttons) {
@@ -337,42 +535,32 @@ function layoutPhone(
 		const length = button.length * longSide;
 		back.push(
 			portrait
-				? roundRect(
-						button.far ? band.x + band.width - PHONE.band * u : band.x - PHONE.button * u,
-						band.y + along,
-						buttonDepth,
-						length,
-						buttonDepth / 2,
-						palette.shade,
+				? sideButton(
+						{
+							x: button.far ? body.x + body.width - PHONE.band * u : body.x - PHONE.button * u,
+							y: body.y + along,
+							width: buttonDepth,
+							height: length,
+						},
+						true,
+						m,
 					)
-				: roundRect(
-						band.x + along,
-						button.far ? band.y - PHONE.button * u : band.y + band.height - PHONE.band * u,
-						length,
-						buttonDepth,
-						buttonDepth / 2,
-						palette.shade,
+				: sideButton(
+						{
+							x: body.x + along,
+							y: button.far ? body.y - PHONE.button * u : body.y + body.height - PHONE.band * u,
+							width: length,
+							height: buttonDepth,
+						},
+						false,
+						m,
 					),
 		);
 	}
 
 	back.push(
-		roundRect(
-			band.x,
-			band.y,
-			band.width,
-			band.height,
-			screenRadius + (PHONE.bezel + PHONE.band) * u,
-			palette.band,
-		),
-		roundRect(
-			bezel.x,
-			bezel.y,
-			bezel.width,
-			bezel.height,
-			screenRadius + PHONE.bezel * u,
-			BEZEL_COLOR,
-		),
+		...metalRim(body, bodyRadius, PHONE.band * u, m),
+		glass(bezel, screenRadius + PHONE.bezel * u, u),
 	);
 
 	const front: DeviceShape[] = [];
@@ -385,22 +573,35 @@ function layoutPhone(
 		const long = 0.27 * u;
 		const short = 0.078 * u;
 		const gap = 0.028 * u;
+		const lensRadius = 0.017 * u;
 		if (portrait) {
+			const y = screen.y + gap;
 			front.push(
-				roundRect(centerX - long / 2, screen.y + gap, long, short, short / 2, BEZEL_COLOR),
+				roundRect({ x: centerX - long / 2, y, width: long, height: short }, short / 2, {
+					color: CUTOUT_COLOR,
+					part: "camera",
+				}),
+				...lens(centerX + long * 0.3, y + short / 2, lensRadius),
 			);
-			front.push(circle(centerX + long * 0.3, screen.y + gap + short / 2, 0.012 * u, LENS_COLOR));
 		} else {
 			const x = nearLeft ? screen.x + gap : screen.x + screen.width - gap - short;
-			front.push(roundRect(x, centerY - long / 2, short, long, short / 2, BEZEL_COLOR));
-			front.push(circle(x + short / 2, centerY - long * 0.3, 0.012 * u, LENS_COLOR));
+			front.push(
+				roundRect({ x, y: centerY - long / 2, width: short, height: long }, short / 2, {
+					color: CUTOUT_COLOR,
+					part: "camera",
+				}),
+				...lens(x + short / 2, centerY - long * 0.3, lensRadius),
+			);
 		}
 	} else if (settings.camera === "hole") {
 		const radius = 0.021 * u;
 		const offset = 0.052 * u;
 		const x = portrait ? centerX : nearLeft ? screen.x + offset : screen.x + screen.width - offset;
 		const y = portrait ? screen.y + offset : centerY;
-		front.push(circle(x, y, radius, BEZEL_COLOR), circle(x, y, radius * 0.45, LENS_COLOR));
+		front.push(
+			circle(x, y, radius, { color: CUTOUT_COLOR, part: "camera" }),
+			...lens(x, y, radius * 0.6),
+		);
 	} else if (settings.camera === "notch") {
 		const long = 0.42 * u;
 		const depth = 0.072 * u;
@@ -408,55 +609,52 @@ function layoutPhone(
 		// The notch starts a radius outside the screen so only its inner corners round.
 		if (portrait) {
 			front.push(
-				roundRect(centerX - long / 2, screen.y - radius, long, depth + radius, radius, BEZEL_COLOR),
+				roundRect(
+					{ x: centerX - long / 2, y: screen.y - radius, width: long, height: depth + radius },
+					radius,
+					{ color: CUTOUT_COLOR, part: "camera" },
+				),
+				...lens(centerX + long * 0.22, screen.y + depth * 0.45, 0.014 * u),
 			);
 		} else {
 			const x = nearLeft ? screen.x - radius : screen.x + screen.width - depth;
-			front.push(roundRect(x, centerY - long / 2, depth + radius, long, radius, BEZEL_COLOR));
+			front.push(
+				roundRect({ x, y: centerY - long / 2, width: depth + radius, height: long }, radius, {
+					color: CUTOUT_COLOR,
+					part: "camera",
+				}),
+				...lens(
+					nearLeft ? screen.x + depth * 0.45 : screen.x + screen.width - depth * 0.45,
+					centerY - long * 0.22,
+					0.014 * u,
+				),
+			);
 		}
 	}
 
-	return { back, front, screenRadius };
+	return { back, front, screenRadius, shadow: softShadow(body, bodyRadius, u) };
 }
 
-function layoutTablet(
-	screen: RenderRect,
-	palette: Palette,
-): Pick<DeviceFrameLayout, "back" | "front" | "screenRadius"> {
+function layoutTablet(screen: RenderRect, m: Material): FrameParts {
 	const u = Math.min(screen.width, screen.height);
 	const screenRadius = TABLET.screenRadius * u;
 	const bezel = expand(screen, TABLET.bezel * u);
-	const band = expand(bezel, TABLET.band * u);
+	const body = expand(bezel, TABLET.band * u);
+	const bodyRadius = screenRadius + (TABLET.bezel + TABLET.band) * u;
 	return {
 		screenRadius,
+		shadow: softShadow(body, bodyRadius, u),
 		back: [
-			roundRect(
-				band.x,
-				band.y,
-				band.width,
-				band.height,
-				screenRadius + (TABLET.bezel + TABLET.band) * u,
-				palette.band,
-			),
-			roundRect(
-				bezel.x,
-				bezel.y,
-				bezel.width,
-				bezel.height,
-				screenRadius + TABLET.bezel * u,
-				BEZEL_COLOR,
-			),
+			...metalRim(body, bodyRadius, TABLET.band * u, m),
+			glass(bezel, screenRadius + TABLET.bezel * u, u),
 			// The camera lives in the bezel, so it never covers the picture.
-			circle(screen.x + screen.width / 2, screen.y - (TABLET.bezel * u) / 2, 0.008 * u, LENS_COLOR),
+			...lens(screen.x + screen.width / 2, screen.y - (TABLET.bezel * u) / 2, 0.009 * u),
 		],
 		front: [],
 	};
 }
 
-function layoutLaptop(
-	screen: RenderRect,
-	palette: Palette,
-): Pick<DeviceFrameLayout, "back" | "front" | "screenRadius"> {
+function layoutLaptop(screen: RenderRect, m: Material): FrameParts {
 	const u = Math.min(screen.width, screen.height);
 	const lid: RenderRect = {
 		x: screen.x - LAPTOP.side * u,
@@ -464,7 +662,6 @@ function layoutLaptop(
 		width: screen.width + LAPTOP.side * u * 2,
 		height: screen.height + (LAPTOP.top + LAPTOP.bottom) * u,
 	};
-	const glass = expand(lid, -LAPTOP.rim * u);
 	const base: RenderRect = {
 		x: lid.x - LAPTOP.baseOverhang * u,
 		y: lid.y + lid.height - LAPTOP.baseOverlap * u,
@@ -474,48 +671,86 @@ function layoutLaptop(
 	const scoopWidth = lid.width * 0.16;
 	return {
 		screenRadius: LAPTOP.screenRadius * u,
+		// Where the base rests on the desk.
+		shadow: [
+			roundRect(
+				{
+					x: base.x + base.width * 0.03,
+					y: base.y + base.height * 0.35,
+					width: base.width * 0.94,
+					height: base.height * 1.3,
+				},
+				base.height,
+				{
+					color: 0x000000,
+					gradient: {
+						type: "radial",
+						stops: [
+							{ offset: 0, color: 0x000000, alpha: 0.62 },
+							{ offset: 0.55, color: 0x000000, alpha: 0.24 },
+							{ offset: 1, color: 0x000000, alpha: 0 },
+						],
+					},
+					part: "shadow",
+				},
+			),
+		],
 		back: [
-			roundRect(lid.x, lid.y, lid.width, lid.height, LAPTOP.lidRadius * u, palette.band),
-			roundRect(
-				glass.x,
-				glass.y,
-				glass.width,
-				glass.height,
-				(LAPTOP.lidRadius - LAPTOP.rim) * u,
-				BEZEL_COLOR,
-			),
-			circle(screen.x + screen.width / 2, screen.y - (LAPTOP.top * u) / 2, 0.006 * u, LENS_COLOR),
-			roundRect(base.x, base.y, base.width, base.height, base.height * 0.45, palette.band),
-			// Lower lip in a darker tone gives the base its thickness.
-			roundRect(
-				base.x,
-				base.y + base.height * 0.58,
-				base.width,
-				base.height * 0.42,
-				base.height * 0.42,
-				palette.shade,
-			),
+			...metalRim(lid, LAPTOP.lidRadius * u, LAPTOP.rim * u, m),
+			glass(expand(lid, -LAPTOP.rim * u), (LAPTOP.lidRadius - LAPTOP.rim) * u, u),
+			...lens(screen.x + screen.width / 2, screen.y - (LAPTOP.top * u) / 2, 0.007 * u),
+			// The base, seen edge-on: lit along its top, falling into shade toward the desk.
+			roundRect(base, base.height * 0.3, {
+				color: m.base,
+				gradient: linear(DOWN, [
+					[0, m.light],
+					[0.18, m.base],
+					[0.55, m.base],
+					[0.82, m.dark],
+					[1, m.edge],
+				]),
+				stroke: { width: 0.0012 * u, color: m.edge, alpha: 0.7 },
+				part: "base",
+			}),
 			// The thumb scoop for opening the lid.
 			roundRect(
-				screen.x + screen.width / 2 - scoopWidth / 2,
-				base.y,
-				scoopWidth,
-				0.014 * u,
-				0.007 * u,
-				palette.shade,
+				{
+					x: screen.x + screen.width / 2 - scoopWidth / 2,
+					y: base.y,
+					width: scoopWidth,
+					height: 0.016 * u,
+				},
+				0.008 * u,
+				{
+					color: m.dark,
+					gradient: linear(DOWN, [
+						[0, m.edge],
+						[1, m.base],
+					]),
+				},
 			),
 		],
 		front: [],
 	};
 }
 
-function layoutBrowser(
-	screen: RenderRect,
-	palette: Palette,
-): Pick<DeviceFrameLayout, "back" | "front" | "screenRadius"> {
+function chevron(x: number, y: number, size: number, pointsLeft: boolean, c: Chrome, u: number) {
+	const dx = pointsLeft ? size * 0.5 : -size * 0.5;
+	return {
+		type: "poly" as const,
+		points: [x + dx, y - size, x - dx, y, x + dx, y + size],
+		color: c.icon,
+		hollow: true,
+		stroke: { width: 0.0042 * u, color: c.icon },
+	};
+}
+
+function layoutBrowser(screen: RenderRect, color: DeviceFrameColor): FrameParts {
+	const c = CHROMES[color];
 	const u = Math.min(screen.width, screen.height);
 	const bar = BROWSER.bar * u;
 	const border = BROWSER.border * u;
+	const radius = BROWSER.radius * u;
 	const windowRect: RenderRect = {
 		x: screen.x - border,
 		y: screen.y - bar,
@@ -525,34 +760,131 @@ function layoutBrowser(
 	const barCenterY = windowRect.y + bar / 2;
 	const lightsStart = windowRect.x + 0.05 * u;
 	const lightsStep = 0.04 * u;
-	// The address field stays centred but never runs into the window buttons.
+	const lightRadius = 0.0125 * u;
 	const centerX = windowRect.x + windowRect.width / 2;
-	const lightsEnd = lightsStart + lightsStep * 2 + 0.05 * u;
-	const fieldWidth = Math.min(windowRect.width * 0.46, (centerX - lightsEnd) * 2);
-	const fieldHeight = 0.046 * u;
+
+	// The sidebar button and back/forward arrows follow the window buttons when the
+	// window is wide enough for them; the address field never runs into either.
+	const sidebarX = lightsStart + lightsStep * 2 + 0.05 * u;
+	const sidebar = { x: sidebarX, y: barCenterY - 0.013 * u, width: 0.036 * u, height: 0.026 * u };
+	const arrowsEnd = sidebar.x + sidebar.width + 0.09 * u;
+	const withTools = (centerX - arrowsEnd) * 2 >= windowRect.width * 0.3;
+	const leftEnd = withTools ? arrowsEnd + 0.02 * u : lightsStart + lightsStep * 2 + 0.05 * u;
+	const fieldWidth = Math.max(0, Math.min(windowRect.width * 0.46, (centerX - leftEnd) * 2));
+	const fieldHeight = 0.05 * u;
+
 	const back: DeviceShape[] = [
+		roundRect(windowRect, radius, {
+			color: c.barBottom,
+			stroke: { width: 0.0015 * u, color: c.line },
+			part: "window",
+		}),
+		roundRect({ x: windowRect.x, y: windowRect.y, width: windowRect.width, height: bar }, radius, {
+			color: c.barBottom,
+			gradient: linear(DOWN, [
+				[0, c.barTop],
+				[1, c.barBottom],
+			]),
+			part: "bar",
+		}),
 		roundRect(
-			windowRect.x,
-			windowRect.y,
-			windowRect.width,
-			windowRect.height,
-			BROWSER.radius * u,
-			palette.band,
+			{ x: windowRect.x, y: screen.y - 0.0018 * u, width: windowRect.width, height: 0.0018 * u },
+			0,
+			{ color: c.line },
 		),
-		...TRAFFIC_LIGHTS.map((color, index) =>
-			circle(lightsStart + index * lightsStep, barCenterY, 0.0125 * u, color),
-		),
-		roundRect(
-			centerX - fieldWidth / 2,
-			barCenterY - fieldHeight / 2,
-			fieldWidth,
-			fieldHeight,
-			fieldHeight / 2,
-			palette.field,
+		...TRAFFIC_LIGHTS.map(([fill, rim], index) =>
+			circle(lightsStart + index * lightsStep, barCenterY, lightRadius, {
+				color: fill,
+				stroke: { width: 0.0018 * u, color: rim },
+				part: "window-button",
+			}),
 		),
 	];
 
-	return { back, front: [], screenRadius: Math.max(0, (BROWSER.radius - BROWSER.border) * u) };
+	if (withTools) {
+		const icon = { width: 0.0036 * u, color: c.icon };
+		back.push(
+			roundRect(sidebar, 0.006 * u, { color: c.icon, hollow: true, stroke: icon }),
+			roundRect(
+				{
+					x: sidebar.x + sidebar.width * 0.34,
+					y: sidebar.y,
+					width: 0.0036 * u,
+					height: sidebar.height,
+				},
+				0,
+				{ color: c.icon },
+			),
+			chevron(sidebar.x + sidebar.width + 0.035 * u, barCenterY, 0.011 * u, true, c, u),
+			chevron(sidebar.x + sidebar.width + 0.075 * u, barCenterY, 0.011 * u, false, c, u),
+		);
+		// New tab and the tab overview, at the right end of the bar.
+		const right = windowRect.x + windowRect.width - 0.05 * u;
+		const plus = 0.026 * u;
+		back.push(
+			roundRect(
+				{
+					x: right - 0.06 * u - plus / 2,
+					y: barCenterY - 0.0018 * u,
+					width: plus,
+					height: 0.0036 * u,
+				},
+				0,
+				{ color: c.icon },
+			),
+			roundRect(
+				{
+					x: right - 0.06 * u - 0.0018 * u,
+					y: barCenterY - plus / 2,
+					width: 0.0036 * u,
+					height: plus,
+				},
+				0,
+				{ color: c.icon },
+			),
+			roundRect(
+				{ x: right - 0.014 * u, y: barCenterY - 0.016 * u, width: 0.024 * u, height: 0.024 * u },
+				0.005 * u,
+				{ color: c.icon, hollow: true, stroke: icon },
+			),
+			roundRect(
+				{ x: right - 0.02 * u, y: barCenterY - 0.009 * u, width: 0.024 * u, height: 0.024 * u },
+				0.005 * u,
+				{ color: c.barBottom, stroke: icon },
+			),
+		);
+	}
+
+	back.push(
+		roundRect(
+			{
+				x: centerX - fieldWidth / 2,
+				y: barCenterY - fieldHeight / 2,
+				width: fieldWidth,
+				height: fieldHeight,
+			},
+			fieldHeight * 0.3,
+			{ color: c.field, stroke: { width: 0.0015 * u, color: c.fieldLine }, part: "address-field" },
+		),
+		// The address itself, as a soft line of text.
+		roundRect(
+			{
+				x: centerX - fieldWidth * 0.17,
+				y: barCenterY - 0.0065 * u,
+				width: fieldWidth * 0.34,
+				height: 0.013 * u,
+			},
+			0.0065 * u,
+			{ color: c.text, part: "address" },
+		),
+	);
+
+	return {
+		back,
+		front: [],
+		screenRadius: Math.max(0, radius - border),
+		shadow: softShadow(windowRect, radius, u, 1.1),
+	};
 }
 
 /**
@@ -569,15 +901,15 @@ export function layoutDeviceFrame(
 ): DeviceFrameLayout | null {
 	if (settings.kind === "none" || screen.width <= 0 || screen.height <= 0) return null;
 	const kind = settings.kind;
-	const palette = PALETTES[settings.color];
+	const material = MATERIALS[settings.color];
 	const parts =
 		kind === "phone"
-			? layoutPhone(screen, settings, palette, portrait)
+			? layoutPhone(screen, settings, material, portrait)
 			: kind === "tablet"
-				? layoutTablet(screen, palette)
+				? layoutTablet(screen, material)
 				: kind === "laptop"
-					? layoutLaptop(screen, palette)
-					: layoutBrowser(screen, palette);
+					? layoutLaptop(screen, material)
+					: layoutBrowser(screen, settings.color);
 
 	const insets = INSETS[kind];
 	const u = Math.min(screen.width, screen.height);
@@ -594,7 +926,7 @@ export function layoutDeviceFrame(
 		// Behind the picture the screen is black, like a display that is switched off.
 		back: [
 			...parts.back,
-			roundRect(screen.x, screen.y, screen.width, screen.height, parts.screenRadius, BEZEL_COLOR),
+			roundRect(screen, parts.screenRadius, { color: BEZEL_COLOR, part: "screen" }),
 		],
 	};
 }
@@ -607,6 +939,12 @@ export interface FramedCompositeLayout extends WebcamCompositeLayout {
 	 * the screen gets what is left of that radius where it reaches the corners.
 	 */
 	videoRadius?: number;
+}
+
+/** Everything painted behind the video: the device's shadow, then the device. */
+export function deviceBackShapes(layout: { deviceFrame: DeviceFrameLayout | null } | null) {
+	const frame = layout?.deviceFrame;
+	return frame ? [...frame.shadow, ...frame.back] : undefined;
 }
 
 /** The largest rectangle of `size`'s proportions that fits inside `box`, centred. */
@@ -702,7 +1040,43 @@ interface FrameGraphics {
 	clear(): unknown;
 	roundRect(x: number, y: number, width: number, height: number, radius: number): unknown;
 	circle(x: number, y: number, radius: number): unknown;
-	fill(style: { color: number }): unknown;
+	poly(points: number[], close?: boolean): unknown;
+	fill(style: { color: number; alpha?: number } | FillGradient): unknown;
+	stroke(style: { width: number; color: number; alpha?: number }): unknown;
+}
+
+// Gradients are laid out in each shape's own box, so one gradient serves every shape
+// that uses it at any size. They are built once: the exporter repaints every frame.
+const gradients = new Map<string, FillGradient>();
+
+function toFillGradient(gradient: ShapeGradient): FillGradient {
+	const key = JSON.stringify(gradient);
+	const cached = gradients.get(key);
+	if (cached) return cached;
+	const colorStops = gradient.stops.map((stop) => ({
+		offset: stop.offset,
+		color: new Color(stop.color).setAlpha(stop.alpha ?? 1),
+	}));
+	const fill =
+		gradient.type === "linear"
+			? new FillGradient({
+					type: "linear",
+					start: { x: gradient.from[0], y: gradient.from[1] },
+					end: { x: gradient.to[0], y: gradient.to[1] },
+					colorStops,
+					textureSpace: "local",
+				})
+			: new FillGradient({
+					type: "radial",
+					center: { x: 0.5, y: 0.5 },
+					innerRadius: 0,
+					outerCenter: { x: 0.5, y: 0.5 },
+					outerRadius: 0.5,
+					colorStops,
+					textureSpace: "local",
+				});
+	gradients.set(key, fill);
+	return fill;
 }
 
 export function paintDeviceShapes(graphics: FrameGraphics, shapes: DeviceShape[] | undefined) {
@@ -710,9 +1084,20 @@ export function paintDeviceShapes(graphics: FrameGraphics, shapes: DeviceShape[]
 	for (const shape of shapes ?? []) {
 		if (shape.type === "circle") {
 			graphics.circle(shape.x, shape.y, shape.radius);
+		} else if (shape.type === "poly") {
+			graphics.poly(shape.points, false);
 		} else {
 			graphics.roundRect(shape.x, shape.y, shape.width, shape.height, shape.radius);
 		}
-		graphics.fill({ color: shape.color });
+		if (!shape.hollow) {
+			graphics.fill(
+				shape.gradient
+					? toFillGradient(shape.gradient)
+					: shape.alpha === undefined
+						? { color: shape.color }
+						: { color: shape.color, alpha: shape.alpha },
+			);
+		}
+		if (shape.stroke) graphics.stroke(shape.stroke);
 	}
 }

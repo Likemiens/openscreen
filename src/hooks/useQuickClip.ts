@@ -10,10 +10,25 @@ export type ClipShareState =
 	| { status: "copied"; url: string }
 	| { status: "error"; message: string };
 
+export type ClipTranscriptState =
+	| { status: "idle" }
+	/** `progress` is `null` until the first measurable step. */
+	| {
+			status: "working";
+			phase: "model" | "transcribe";
+			progress: number | null;
+			/** Where it runs: the GPU model, or the smaller one on the processor. */
+			device?: "gpu" | "cpu";
+	  }
+	/** `<clip>.txt` and `<clip>.srt` are saved next to the clip. */
+	| { status: "done" }
+	| { status: "error"; message: string };
+
 export interface ReadyClip extends FinishedQuickClip {
 	title: string;
 	thumbnail: string | null;
 	share: ClipShareState;
+	transcript: ClipTranscriptState;
 }
 
 export type QuickClipState =
@@ -28,6 +43,17 @@ interface UseQuickClipOptions {
 	onConsumed: () => void;
 	/** Saving as a clip failed; hand the draft to the Studio flow instead. */
 	onFallbackToDraft: () => void;
+}
+
+const NO_SPEECH_MESSAGE = "No speech was heard in this recording.";
+
+/** What went wrong, in words someone can act on. */
+function describeTranscriptError(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	if (/fetch|network|offline|502|ERR_/i.test(message)) {
+		return "Couldn't download the speech model. Check the connection and try again.";
+	}
+	return message || "Transcription failed.";
 }
 
 function fileTitle(filePath: string): string {
@@ -48,6 +74,19 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 	const uploadingPaths = useRef(new Set<string>());
 	const callbacks = useRef({ onConsumed, onFallbackToDraft });
 	callbacks.current = { onConsumed, onFallbackToDraft };
+	// Transcriptions in flight, by clip path; each can be stopped.
+	const transcriptions = useRef(new Map<string, AbortController>());
+	const latestState = useRef(state);
+	latestState.current = state;
+
+	// Saving, uploads and transcriptions each keep the hidden HUD alive; it may be
+	// released only once none of them is running.
+	const busyReasons = useRef(new Set<string>());
+	const holdHud = useCallback((reason: string, busy: boolean) => {
+		if (busy) busyReasons.current.add(reason);
+		else busyReasons.current.delete(reason);
+		window.electronAPI.setHudBusy(busyReasons.current.size > 0);
+	}, []);
 
 	useEffect(() => {
 		if (!draft?.quickClip || processingPath.current === draft.filePath) return;
@@ -55,7 +94,7 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 		processingPath.current = sourcePath;
 
 		setState({ status: "saving", progress: null });
-		window.electronAPI.setHudBusy(true);
+		holdHud("saving", true);
 
 		void (async () => {
 			try {
@@ -70,9 +109,10 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 					onProgress: (progress) => setState({ status: "saving", progress }),
 				});
 
-				// The clip now is the recording: drop the raw capture and point Studio at it.
+				// The clip now is the recording: point Studio at it and drop what is left of the
+				// raw capture. The main process refuses unless the clip really is on disk.
 				await window.electronAPI.setCurrentVideoPath(clip.path).catch(() => undefined);
-				void window.electronAPI.discardRecordingSource(sourcePath);
+				void window.electronAPI.discardRecordingSource(sourcePath, clip.path);
 
 				setState({
 					status: "ready",
@@ -81,6 +121,7 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 						title: fileTitle(clip.path),
 						thumbnail: null,
 						share: { status: "idle" },
+						transcript: { status: "idle" },
 					},
 				});
 				callbacks.current.onConsumed();
@@ -101,10 +142,10 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 				setState({ status: "idle" });
 				callbacks.current.onFallbackToDraft();
 			} finally {
-				window.electronAPI.setHudBusy(false);
+				holdHud("saving", false);
 			}
 		})();
-	}, [draft]);
+	}, [draft, holdHud]);
 
 	// Keep the card's share state in step with the upload running in the main process.
 	useEffect(() => {
@@ -114,7 +155,7 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 			if (finished) {
 				// Release the HUD even if the card this upload belonged to is gone.
 				uploadingPaths.current.delete(status.filePath);
-				if (uploadingPaths.current.size === 0) window.electronAPI.setHudBusy(false);
+				holdHud(`upload:${status.filePath}`, false);
 			}
 			setState((current) => {
 				if (current.status !== "ready" || current.clip.path !== status.filePath) return current;
@@ -131,7 +172,7 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 				return { status: "ready", clip: { ...current.clip, share } };
 			});
 		});
-	}, []);
+	}, [holdHud]);
 
 	const updateClip = useCallback((patch: Partial<ReadyClip>) => {
 		setState((current) =>
@@ -143,7 +184,8 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 
 	const renameClip = useCallback(
 		async (title: string) => {
-			if (state.status !== "ready") return;
+			// The transcript is written next to the clip under its name when it is done.
+			if (state.status !== "ready" || transcriptions.current.has(state.clip.path)) return;
 			const nextTitle = sanitizeRecordingTitle(title, state.clip.title);
 			if (nextTitle === state.clip.title) {
 				updateClip({ title: nextTitle });
@@ -165,7 +207,7 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 		const filePath = state.clip.path;
 		uploadingPaths.current.add(filePath);
 		updateClip({ share: { status: "uploading", progress: 0 } });
-		window.electronAPI.setHudBusy(true);
+		holdHud(`upload:${filePath}`, true);
 		const result = await window.electronAPI.uploadRecordingToYandexDisk({
 			filePath: state.clip.path,
 			// With the extension, so a dot in the title is not mistaken for one.
@@ -175,10 +217,95 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 		});
 		if (!result.success) {
 			uploadingPaths.current.delete(filePath);
-			if (uploadingPaths.current.size === 0) window.electronAPI.setHudBusy(false);
+			holdHud(`upload:${filePath}`, false);
 			updateClip({ share: { status: "error", message: result.error ?? "Upload failed." } });
 		}
-	}, [state, updateClip]);
+	}, [state, updateClip, holdHud]);
+
+	const setTranscript = useCallback((filePath: string, transcript: ClipTranscriptState) => {
+		setState((current) =>
+			current.status === "ready" && current.clip.path === filePath
+				? { status: "ready", clip: { ...current.clip, transcript } }
+				: current,
+		);
+	}, []);
+
+	/**
+	 * Transcribes the clip with the local speech model (downloaded once on first use)
+	 * and saves `<clip>.txt` and `<clip>.srt` next to it. Keeps running if the card is
+	 * closed, and says so when it is done.
+	 */
+	const transcribeClip = useCallback(async () => {
+		if (state.status !== "ready" || transcriptions.current.has(state.clip.path)) return;
+		const filePath = state.clip.path;
+		const controller = new AbortController();
+		transcriptions.current.set(filePath, controller);
+		holdHud(`transcribe:${filePath}`, true);
+		setTranscript(filePath, { status: "working", phase: "model", progress: null });
+		try {
+			const [{ transcribeVideoFile }, { formatSrt, formatTranscriptText }] = await Promise.all([
+				import("@/lib/captioning/transcribeFile"),
+				import("@/lib/captioning/transcript"),
+			]);
+			const segments = await transcribeVideoFile(filePath, {
+				signal: controller.signal,
+				onProgress: (progress) =>
+					setTranscript(filePath, {
+						status: "working",
+						phase: progress.phase,
+						progress: progress.fraction,
+						device: progress.kind,
+					}),
+			});
+			if (segments.length === 0) {
+				setTranscript(filePath, { status: "error", message: NO_SPEECH_MESSAGE });
+				return;
+			}
+			const saved = await window.electronAPI.saveClipTranscript(
+				filePath,
+				formatTranscriptText(segments),
+				formatSrt(segments),
+			);
+			if (!saved.success) throw new Error(saved.error ?? "Could not save the transcript.");
+			setTranscript(filePath, { status: "done" });
+			const current = latestState.current;
+			if (current.status !== "ready" || current.clip.path !== filePath) {
+				toast.success("Transcript saved next to the clip", {
+					action: {
+						label: "Open",
+						onClick: () => void window.electronAPI.openClipTranscript(filePath),
+					},
+				});
+			}
+		} catch (error) {
+			if (controller.signal.aborted) {
+				setTranscript(filePath, { status: "idle" });
+				return;
+			}
+			console.error("Transcription failed:", error);
+			setTranscript(filePath, { status: "error", message: describeTranscriptError(error) });
+		} finally {
+			transcriptions.current.delete(filePath);
+			holdHud(`transcribe:${filePath}`, false);
+		}
+	}, [state, holdHud, setTranscript]);
+
+	const cancelTranscript = useCallback(() => {
+		if (state.status === "ready") transcriptions.current.get(state.clip.path)?.abort();
+	}, [state]);
+
+	const openTranscript = useCallback(async () => {
+		if (state.status !== "ready") return;
+		const result = await window.electronAPI.openClipTranscript(state.clip.path);
+		if (!result.success) toast.error(result.error ?? "Could not open the transcript.");
+	}, [state]);
+
+	const copyTranscript = useCallback(async () => {
+		if (state.status !== "ready") return false;
+		const result = await window.electronAPI.copyClipTranscript(state.clip.path);
+		if (!result.success) toast.error(result.error ?? "Could not copy the transcript.");
+		return result.success;
+	}, [state]);
 
 	const copyClipFile = useCallback(async () => {
 		if (state.status !== "ready") return false;
@@ -205,6 +332,7 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 
 	const deleteClip = useCallback(async () => {
 		if (state.status !== "ready") return;
+		transcriptions.current.get(state.clip.path)?.abort();
 		const result = await window.electronAPI.trashClip(state.clip.path);
 		if (!result.success) {
 			toast.error(result.error ?? "Could not delete the clip.");
@@ -235,5 +363,9 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 		dismissClip,
 		deleteClip,
 		openClipInStudio,
+		transcribeClip,
+		cancelTranscript,
+		openTranscript,
+		copyTranscript,
 	};
 }

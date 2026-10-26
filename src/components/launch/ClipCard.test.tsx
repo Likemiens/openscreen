@@ -15,6 +15,7 @@ const CLIP: ReadyClip = {
 	mode: "transcode",
 	thumbnail: null,
 	share: { status: "idle" },
+	transcript: { status: "idle" },
 };
 
 function renderCard(overrides: Partial<React.ComponentProps<typeof ClipCard>> = {}) {
@@ -31,6 +32,10 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof ClipCard>> = 
 		onDelete: vi.fn(),
 		onDismiss: vi.fn(),
 		onOpenLink: vi.fn(),
+		onTranscribe: vi.fn(),
+		onCancelTranscript: vi.fn(),
+		onOpenTranscript: vi.fn(),
+		onCopyTranscript: vi.fn(async () => true),
 		...overrides,
 	};
 	render(
@@ -43,6 +48,13 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof ClipCard>> = 
 
 describe("ClipCard", () => {
 	afterEach(cleanup);
+
+	it("offers no transcription when it isn't installed", () => {
+		renderCard({ onTranscribe: undefined });
+
+		expect(screen.queryByTestId("hud-clip-transcribe")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Show in folder" })).toBeInTheDocument();
+	});
 
 	it("describes the saved file and where it went", () => {
 		renderCard();
@@ -148,5 +160,65 @@ describe("ClipCard", () => {
 		expect(props.onOpenStudio).toHaveBeenCalledTimes(1);
 		expect(props.onDelete).toHaveBeenCalledTimes(1);
 		expect(props.onDismiss).toHaveBeenCalledTimes(1);
+	});
+
+	it("transcribes on demand", () => {
+		const props = renderCard();
+
+		fireEvent.click(screen.getByRole("button", { name: "Transcribe" }));
+
+		expect(props.onTranscribe).toHaveBeenCalledTimes(1);
+		expect(screen.queryByTestId("hud-clip-transcript-status")).not.toBeInTheDocument();
+	});
+
+	it("shows how far a transcription is, can stop it, and keeps the name fixed meanwhile", () => {
+		const props = renderCard({
+			clip: {
+				...CLIP,
+				transcript: { status: "working", phase: "transcribe", progress: 0.37, device: "cpu" },
+			},
+		});
+
+		expect(screen.getByText("Transcribing 37% · on the processor")).toBeInTheDocument();
+		expect(screen.getByLabelText("Clip name")).toBeDisabled();
+		fireEvent.click(screen.getByRole("button", { name: "Stop transcribing" }));
+
+		expect(props.onCancelTranscript).toHaveBeenCalledTimes(1);
+		expect(props.onTranscribe).not.toHaveBeenCalled();
+	});
+
+	it("says when the speech model is still loading", () => {
+		renderCard({
+			clip: { ...CLIP, transcript: { status: "working", phase: "model", progress: 0.5 } },
+		});
+
+		expect(screen.getByText("Loading the speech model 50%")).toBeInTheDocument();
+	});
+
+	it("offers the finished transcript: open it, or copy its text", async () => {
+		const props = renderCard({ clip: { ...CLIP, transcript: { status: "done" } } });
+
+		expect(screen.getByText("Transcript and subtitles saved")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Open the transcript" }));
+		fireEvent.click(screen.getByRole("button", { name: "Open" }));
+		fireEvent.click(screen.getByRole("button", { name: "Copy text" }));
+
+		expect(props.onOpenTranscript).toHaveBeenCalledTimes(2);
+		expect(props.onCopyTranscript).toHaveBeenCalledTimes(1);
+		expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+	});
+
+	it("explains a failed transcription and lets it be tried again", () => {
+		const props = renderCard({
+			clip: {
+				...CLIP,
+				transcript: { status: "error", message: "No speech was heard in this recording." },
+			},
+		});
+
+		expect(screen.getByRole("alert")).toHaveTextContent("No speech was heard in this recording.");
+		fireEvent.click(screen.getByRole("button", { name: "Transcribe" }));
+
+		expect(props.onTranscribe).toHaveBeenCalledTimes(1);
 	});
 });

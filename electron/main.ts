@@ -38,6 +38,11 @@ import {
 	selectScreenSourceForDisplay,
 } from "./ipc/handlers";
 import { type QuickCaptureController, registerQuickCaptureIpcHandlers } from "./ipc/quickCapture";
+import {
+	hasSpeechRuntime,
+	registerSpeechModelProtocol,
+	registerSpeechScheme,
+} from "./ipc/speechModels";
 import { acquireStableInstanceLock } from "./singleInstanceLock";
 import {
 	createCountdownOverlayWindow,
@@ -62,6 +67,12 @@ if (process.platform === "darwin") {
 	app.commandLine.appendSwitch("disable-features", "MacCatapLoopbackAudioForScreenShare");
 }
 
+// Chromium features to switch on; passed as one switch, since a second "enable-features"
+// would replace the first.
+// SharedArrayBuffer lets transcription run ONNX Runtime on several threads; the pages
+// are the app's own, so cross-origin isolation has nothing to protect here.
+const enabledFeatures = ["SharedArrayBuffer"];
+
 // Wayland support for screen capture and window management on Wayland compositors.
 if (process.platform === "linux") {
 	const isWayland =
@@ -69,7 +80,7 @@ if (process.platform === "linux") {
 	if (isWayland) {
 		app.commandLine.appendSwitch("ozone-platform", "wayland");
 		// Enable WebRTCPipeWireCapturer for screen capture on Wayland
-		app.commandLine.appendSwitch("enable-features", "WaylandWindowDrag,WebRTCPipeWireCapturer");
+		enabledFeatures.push("WaylandWindowDrag", "WebRTCPipeWireCapturer");
 		// Chromium's Wayland Ozone backend can't use Vulkan. When it tries, the WebRTC
 		// PipeWire capturer fails to import DMA-BUF frames into EGL (EGL_BAD_MATCH), the
 		// stream renegotiates, and screen recording yields no usable frames. Force the
@@ -78,6 +89,10 @@ if (process.platform === "linux") {
 		app.commandLine.appendSwitch("disable-features", "Vulkan");
 	}
 }
+
+app.commandLine.appendSwitch("enable-features", enabledFeatures.join(","));
+// Must happen before the app is ready.
+registerSpeechScheme();
 
 export const RECORDINGS_DIR = path.join(app.getPath("userData"), "recordings");
 
@@ -836,6 +851,23 @@ appReady?.then(async () => {
 	createTray();
 	updateTrayMenu();
 	setupApplicationMenu();
+	// Packaged: copied next to the app at build time (unless the Windows installer was told
+	// to leave transcription out). Development: straight from the installed onnxruntime-web,
+	// wherever npm placed it.
+	const speechRuntimeDirs = app.isPackaged
+		? [path.join(process.resourcesPath, "speech-runtime")]
+		: [
+				path.join(
+					process.env.APP_ROOT ?? "",
+					"node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist",
+				),
+				path.join(process.env.APP_ROOT ?? "", "node_modules/onnxruntime-web/dist"),
+			];
+	registerSpeechModelProtocol({
+		cacheDir: path.join(app.getPath("userData"), "speech-models"),
+		runtimeDirs: speechRuntimeDirs,
+	});
+	ipcMain.handle("speech-recognition-available", () => hasSpeechRuntime(speechRuntimeDirs));
 	const yandexDisk = registerYandexDiskIpcHandlers(
 		ipcMain,
 		RECORDINGS_DIR,

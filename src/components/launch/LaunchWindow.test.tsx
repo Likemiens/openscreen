@@ -259,6 +259,10 @@ function emitSourceSelectorClosed() {
 function resetLaunchMocks() {
 	localStorage.clear();
 	vi.stubGlobal("ResizeObserver", StubResizeObserver);
+	recorderState.value.recording = false;
+	recorderState.value.elapsedSeconds = 0;
+	recorderState.value.restartRecording.mockClear();
+	recorderState.value.cancelRecording.mockClear();
 	recorderState.value.toggleRecording.mockClear();
 	recorderState.value.softwareEncoderFallbackNoticeVisible = false;
 	recorderState.value.dismissSoftwareEncoderFallbackNotice.mockClear();
@@ -577,6 +581,34 @@ describe("LaunchWindow capture flow", () => {
 
 		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 		expect(window.electronAPI.openRegionSelector).not.toHaveBeenCalled();
+	});
+
+	it("asks for a second click before throwing away a long recording", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.elapsedSeconds = 45 * 60;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+		expect(recorderState.value.cancelRecording).not.toHaveBeenCalled();
+		// A click on the other button does not confirm this one: it arms that one instead.
+		fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+		expect(recorderState.value.restartRecording).not.toHaveBeenCalled();
+		expect(recorderState.value.cancelRecording).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Confirm restart" }));
+		expect(recorderState.value.restartRecording).toHaveBeenCalledTimes(1);
+		expect(recorderState.value.cancelRecording).not.toHaveBeenCalled();
+	});
+
+	it("discards a take of a few seconds at once", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.elapsedSeconds = 4;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+		expect(recorderState.value.cancelRecording).toHaveBeenCalledTimes(1);
 	});
 
 	it("lets quality and frame rate be chosen before recording", async () => {

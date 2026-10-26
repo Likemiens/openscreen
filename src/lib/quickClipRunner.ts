@@ -40,7 +40,8 @@ export interface FinishedQuickClip {
 	mode: QuickClipPlan["mode"];
 }
 
-function createSource(sourcePath: string, size: number): StreamSource {
+/** A recording on disk, read through the main process a range at a time. */
+export function createRecordingSource(sourcePath: string, size: number): StreamSource {
 	return new StreamSource({
 		getSize: () => size,
 		read: async (start, end) => {
@@ -79,7 +80,7 @@ export async function finalizeQuickClip(input: FinalizeQuickClipInput): Promise<
 	}
 
 	const media = new Input({
-		source: createSource(input.sourcePath, info.size),
+		source: createRecordingSource(input.sourcePath, info.size),
 		formats: ALL_FORMATS,
 	});
 
@@ -101,6 +102,7 @@ export async function finalizeQuickClip(input: FinalizeQuickClipInput): Promise<
 			quality: input.quality,
 			frameRate: input.frameRate,
 			region: input.region,
+			durationSeconds,
 		});
 		if (plan.mode === "copy") {
 			const copied = await window.electronAPI.copyRecordingAsClip(input.sourcePath, input.title);
@@ -152,10 +154,13 @@ export async function finalizeQuickClip(input: FinalizeQuickClipInput): Promise<
 				showWarnings: false,
 			});
 			// `isValid` stays true when a track is merely dropped: a conversion that lost
-			// its video (no encoder for this frame size) would "succeed" as an audio-only
-			// file, and the raw recording would then be deleted. Refuse it instead.
+			// its video (no encoder for this frame size) or its sound would "succeed" as an
+			// audio-only or a silent file, and the raw recording would then be deleted.
+			// Refuse it instead; the recording then stays as it is for the Studio flow.
 			const keepsVideo = conversion.utilizedTracks.some((track) => track.isVideoTrack());
-			if (!conversion.isValid || !keepsVideo) {
+			const keptAudio = conversion.utilizedTracks.filter((track) => track.isAudioTrack()).length;
+			const sourceAudio = (await media.getAudioTracks()).length;
+			if (!conversion.isValid || !keepsVideo || keptAudio < sourceAudio) {
 				throw new Error("This recording cannot be converted on this device.");
 			}
 

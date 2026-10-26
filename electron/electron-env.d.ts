@@ -379,8 +379,19 @@ interface Window {
 		getClipThumbnail: (filePath: string) => Promise<{ success: boolean; dataUrl?: string }>;
 		startClipDrag: (filePath: string) => void;
 		trashClip: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+		/** Writes `<clip>.txt` and `<clip>.srt` next to the clip. */
+		saveClipTranscript: (
+			clipPath: string,
+			text: string,
+			srt: string,
+		) => Promise<{ success: boolean; textPath?: string; srtPath?: string; error?: string }>;
+		openClipTranscript: (clipPath: string) => Promise<{ success: boolean; error?: string }>;
+		copyClipTranscript: (clipPath: string) => Promise<{ success: boolean; error?: string }>;
+		/** False when the Windows installer was told to leave transcription out. */
+		isSpeechRecognitionAvailable: () => Promise<boolean>;
 		discardRecordingSource: (
 			screenVideoPath: string,
+			clipPath: string,
 		) => Promise<{ success: boolean; error?: string }>;
 		setHudOverlayIgnoreMouseEvents: (ignore: boolean) => void;
 		moveHudOverlayBy: (deltaX: number, deltaY: number) => void;

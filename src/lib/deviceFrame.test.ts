@@ -1,13 +1,16 @@
+import { FillGradient } from "pixi.js";
 import { describe, expect, it, vi } from "vitest";
 import {
 	canRotateDevice,
 	computeFramedCompositeLayout,
 	DEFAULT_DEVICE_FRAME,
 	DEFAULT_DEVICE_ORIENTATION,
+	DEVICE_FRAME_COLORS,
 	DEVICE_FRAME_KINDS,
 	type DeviceFrameKind,
 	type DeviceFrameSettings,
 	type DeviceShape,
+	deviceBackShapes,
 	getDeviceScreenAspect,
 	hasDeviceFrame,
 	isFullBleedCameraLayout,
@@ -27,6 +30,16 @@ function frame(patch: Partial<DeviceFrameSettings>): DeviceFrameSettings {
 }
 
 function shapeBounds(shape: DeviceShape) {
+	if (shape.type === "poly") {
+		const xs = shape.points.filter((_, index) => index % 2 === 0);
+		const ys = shape.points.filter((_, index) => index % 2 === 1);
+		return {
+			left: Math.min(...xs),
+			top: Math.min(...ys),
+			right: Math.max(...xs),
+			bottom: Math.max(...ys),
+		};
+	}
 	return shape.type === "circle"
 		? {
 				left: shape.x - shape.radius,
@@ -228,10 +241,57 @@ describe("layoutDeviceFrame", () => {
 			{ x: 0, y: 0, width: 300, height: 900 },
 			frame({ kind: "browser" }),
 		)!;
-		const lights = narrow.back.filter((shape) => shape.type === "circle");
-		const field = narrow.back.at(-2)!;
+		const lights = narrow.back.filter((shape) => shape.part === "window-button");
+		const field = narrow.back.find((shape) => shape.part === "address-field")!;
 		expect(lights).toHaveLength(3);
 		expect(shapeBounds(field).left).toBeGreaterThan(shapeBounds(lights[2]).right);
+	});
+
+	it("gives a wide browser window its toolbar, clear of the buttons and the address", () => {
+		const wide = layoutDeviceFrame(screen, frame({ kind: "browser" }))!;
+		const field = shapeBounds(wide.back.find((shape) => shape.part === "address-field")!);
+		const arrows = wide.back.filter((shape) => shape.type === "poly").map(shapeBounds);
+		const lights = wide.back.filter((shape) => shape.part === "window-button").map(shapeBounds);
+		expect(arrows).toHaveLength(2);
+		for (const arrow of arrows) {
+			expect(arrow.left).toBeGreaterThan(lights[2].right);
+			expect(arrow.right).toBeLessThan(field.left);
+		}
+	});
+
+	it("draws a light browser for the light colours and a dark one for the dark", () => {
+		const bar = (color: DeviceFrameSettings["color"]) =>
+			layoutDeviceFrame(screen, frame({ kind: "browser", color }))!.back.find(
+				(shape) => shape.part === "bar",
+			)!.color;
+		const brightness = (rgb: number) => (rgb >> 16) + ((rgb >> 8) & 0xff) + (rgb & 0xff);
+		expect(brightness(bar("silver"))).toBeGreaterThan(600);
+		expect(brightness(bar("white"))).toBeGreaterThan(600);
+		expect(brightness(bar("graphite"))).toBeLessThan(200);
+		expect(brightness(bar("black"))).toBeLessThan(200);
+	});
+
+	it.each(FRAMED_KINDS)("casts a soft %s shadow that is painted before the device", (kind) => {
+		const layout = layoutDeviceFrame(screen, frame({ kind }))!;
+		expect(layout.shadow.length).toBeGreaterThan(0);
+		for (const shape of layout.shadow) expect(shape.color).toBe(0x000000);
+		const painted = deviceBackShapes({ deviceFrame: layout })!;
+		expect(painted.slice(0, layout.shadow.length)).toEqual(layout.shadow);
+		expect(painted.slice(layout.shadow.length)).toEqual(layout.back);
+		expect(deviceBackShapes({ deviceFrame: null })).toBeUndefined();
+		expect(deviceBackShapes(null)).toBeUndefined();
+	});
+
+	it.each(DEVICE_FRAME_COLORS)("lights the %s metal and keeps every gradient in order", (color) => {
+		const layout = layoutDeviceFrame(screen, frame({ kind: "phone", color }))!;
+		const graded = [...layout.shadow, ...layout.back, ...layout.front].filter((s) => s.gradient);
+		expect(graded.length).toBeGreaterThan(3);
+		for (const shape of graded) {
+			const offsets = shape.gradient!.stops.map((stop) => stop.offset);
+			expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
+			expect(offsets[0]).toBe(0);
+			expect(offsets.at(-1)).toBe(1);
+		}
 	});
 });
 
@@ -442,7 +502,14 @@ describe("computeFramedCompositeLayout", () => {
 
 describe("paintDeviceShapes", () => {
 	function fakeGraphics() {
-		return { clear: vi.fn(), roundRect: vi.fn(), circle: vi.fn(), fill: vi.fn() };
+		return {
+			clear: vi.fn(),
+			roundRect: vi.fn(),
+			circle: vi.fn(),
+			poly: vi.fn(),
+			fill: vi.fn(),
+			stroke: vi.fn(),
+		};
 	}
 
 	it("clears the layer even when there is nothing to draw", () => {
@@ -461,5 +528,61 @@ describe("paintDeviceShapes", () => {
 		expect(graphics.roundRect).toHaveBeenCalledWith(1, 2, 30, 40, 5);
 		expect(graphics.circle).toHaveBeenCalledWith(9, 8, 7);
 		expect(graphics.fill.mock.calls).toEqual([[{ color: 0x111111 }], [{ color: 0x222222 }]]);
+	});
+
+	it("fills with a gradient, a see-through colour, or only an outline as asked", () => {
+		const graphics = fakeGraphics();
+		const gradient = {
+			type: "linear" as const,
+			from: [0, 0] as [number, number],
+			to: [0, 1] as [number, number],
+			stops: [
+				{ offset: 0, color: 0xffffff },
+				{ offset: 1, color: 0x000000 },
+			],
+		};
+		paintDeviceShapes(graphics, [
+			{
+				type: "roundRect",
+				x: 0,
+				y: 0,
+				width: 10,
+				height: 10,
+				radius: 2,
+				color: 0x888888,
+				gradient,
+			},
+			{ type: "circle", x: 5, y: 5, radius: 3, color: 0x000000, alpha: 0.25 },
+			{
+				type: "poly",
+				points: [0, 0, 4, 4, 0, 8],
+				color: 0x555555,
+				hollow: true,
+				stroke: { width: 1, color: 0x555555 },
+			},
+		]);
+		expect(graphics.fill).toHaveBeenCalledTimes(2);
+		expect(graphics.fill.mock.calls[0][0]).toBeInstanceOf(FillGradient);
+		expect(graphics.fill.mock.calls[1][0]).toEqual({ color: 0x000000, alpha: 0.25 });
+		expect(graphics.poly).toHaveBeenCalledWith([0, 0, 4, 4, 0, 8], false);
+		expect(graphics.stroke).toHaveBeenCalledWith({ width: 1, color: 0x555555 });
+	});
+
+	it("builds each gradient once, however often the frame is repainted", () => {
+		const graphics = fakeGraphics();
+		const layout = layoutDeviceFrame(
+			{ x: 0, y: 0, width: 390, height: 844 },
+			frame({ kind: "phone" }),
+		)!;
+		paintDeviceShapes(graphics, layout.back);
+		const first = graphics.fill.mock.calls.map(([style]) => style);
+		graphics.fill.mockClear();
+		paintDeviceShapes(graphics, layout.back);
+		const second = graphics.fill.mock.calls.map(([style]) => style);
+		const gradients = first.filter((style) => style instanceof FillGradient);
+		expect(gradients.length).toBeGreaterThan(0);
+		first.forEach((style, index) => {
+			if (style instanceof FillGradient) expect(second[index]).toBe(style);
+		});
 	});
 });

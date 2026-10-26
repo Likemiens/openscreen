@@ -79,6 +79,23 @@ function normalizeForComparison(filePath: string): string {
 	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
+/** Transcript files kept next to a clip, named after it so players find the subtitles. */
+export function transcriptPathsFor(clipPath: string): { text: string; srt: string } {
+	const { dir, name } = path.parse(clipPath);
+	return { text: path.join(dir, `${name}.txt`), srt: path.join(dir, `${name}.srt`) };
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+	return fs.stat(filePath).then(
+		(stats) => stats.isFile(),
+		() => false,
+	);
+}
+
+// A byte-order mark: Notepad and older Windows players otherwise guess the encoding
+// of a UTF-8 transcript and garble anything that is not English.
+const UTF8_BOM = "\uFEFF";
+
 function isPathWithin(filePath: string, directory: string): boolean {
 	const file = normalizeForComparison(filePath);
 	const dir = normalizeForComparison(directory);
@@ -383,13 +400,24 @@ export function registerQuickCaptureIpcHandlers(
 				}
 				const folder = await deps.settings.resolveSaveFolder();
 				const finalPath = await resolveUniqueClipPath(folder, title);
-				const tempPath = `${finalPath}${PARTIAL_SUFFIX}`;
 				try {
-					await fs.copyFile(sourcePath, tempPath);
-					await fs.rename(tempPath, finalPath);
-				} catch (error) {
-					await fs.rm(tempPath, { force: true }).catch(() => undefined);
-					throw error;
+					// On the same drive the recording simply becomes the clip: instant for a
+					// file of any size, and there is never a moment with a half-written copy.
+					await fs.rename(sourcePath, finalPath);
+				} catch {
+					// Another drive: copy, make sure every byte arrived, then put it in place.
+					const tempPath = `${finalPath}${PARTIAL_SUFFIX}`;
+					try {
+						const sourceSize = (await fs.stat(sourcePath)).size;
+						await fs.copyFile(sourcePath, tempPath);
+						if ((await fs.stat(tempPath)).size !== sourceSize) {
+							throw new Error("The recording was not copied completely.");
+						}
+						await fs.rename(tempPath, finalPath);
+					} catch (error) {
+						await fs.rm(tempPath, { force: true }).catch(() => undefined);
+						throw error;
+					}
 				}
 				rememberClip(finalPath);
 				return await describeClip(finalPath);
@@ -408,6 +436,14 @@ export function registerQuickCaptureIpcHandlers(
 				const nextPath = await resolveUniqueClipPath(path.dirname(current), title, current);
 				if (normalizeForComparison(nextPath) !== normalizeForComparison(current)) {
 					await fs.rename(current, nextPath);
+					// The transcript keeps following the clip's name.
+					const from = transcriptPathsFor(current);
+					const to = transcriptPathsFor(nextPath);
+					for (const kind of ["text", "srt"] as const) {
+						if (await fileExists(from[kind])) {
+							await fs.rename(from[kind], to[kind]).catch(() => undefined);
+						}
+					}
 					const dragIcon = dragIcons.get(normalizeForComparison(current));
 					if (dragIcon) dragIcons.set(normalizeForComparison(nextPath), dragIcon);
 					forgetClip(current);
@@ -461,27 +497,88 @@ export function registerQuickCaptureIpcHandlers(
 		try {
 			await shell.trashItem(clip);
 			forgetClip(clip);
+			for (const sidecar of Object.values(transcriptPathsFor(clip))) {
+				if (await fileExists(sidecar)) await shell.trashItem(sidecar).catch(() => undefined);
+			}
 			return { success: true };
 		} catch (error) {
 			return { success: false, error: error instanceof Error ? error.message : String(error) };
 		}
 	});
 
-	// Removes the raw capture behind a finished clip so recordings don't pile up.
-	ipcMain.handle("quick-clip-discard-source", async (_, screenVideoPath: string) => {
-		if (typeof screenVideoPath !== "string" || !isPathWithin(screenVideoPath, deps.recordingsDir)) {
-			return { success: false, error: "Not an OpenScreen recording." };
-		}
-		const parsed = path.parse(screenVideoPath);
-		await Promise.all(
-			[
-				screenVideoPath,
-				`${screenVideoPath}.cursor.json`,
-				path.join(parsed.dir, `${parsed.name}.session.json`),
-			].map((target) => fs.rm(target, { force: true }).catch(() => undefined)),
-		);
-		return { success: true };
+	// --- Transcripts --------------------------------------------------------------
+
+	// Writes the transcript of a clip next to it: readable text and SRT subtitles.
+	ipcMain.handle(
+		"quick-clip-save-transcript",
+		async (_, filePath: string, text: unknown, srt: unknown) => {
+			const clip = resolveKnownClip(filePath);
+			if (!clip) return { success: false, error: "This clip is no longer available." };
+			if (typeof text !== "string" || typeof srt !== "string") {
+				return { success: false, error: "The transcript is empty." };
+			}
+			try {
+				const paths = transcriptPathsFor(clip);
+				await fs.writeFile(paths.text, `${UTF8_BOM}${text}\n`, "utf8");
+				await fs.writeFile(paths.srt, `${UTF8_BOM}${srt}`, "utf8");
+				return { success: true, textPath: paths.text, srtPath: paths.srt };
+			} catch (error) {
+				return { success: false, error: error instanceof Error ? error.message : String(error) };
+			}
+		},
+	);
+
+	ipcMain.handle("quick-clip-open-transcript", async (_, filePath: string) => {
+		const clip = resolveKnownClip(filePath);
+		if (!clip) return { success: false, error: "This clip is no longer available." };
+		const error = await shell.openPath(transcriptPathsFor(clip).text);
+		return error ? { success: false, error } : { success: true };
 	});
+
+	ipcMain.handle("quick-clip-copy-transcript", async (_, filePath: string) => {
+		const clip = resolveKnownClip(filePath);
+		if (!clip) return { success: false, error: "This clip is no longer available." };
+		try {
+			const text = await fs.readFile(transcriptPathsFor(clip).text, "utf8");
+			clipboard.writeText(text.replace(/^\uFEFF/, "").trimEnd());
+			return { success: true };
+		} catch (error) {
+			return { success: false, error: error instanceof Error ? error.message : String(error) };
+		}
+	});
+
+	// Removes the raw capture behind a finished clip so recordings don't pile up. The raw
+	// file is the only copy until the clip exists, so it goes only once the clip is there.
+	ipcMain.handle(
+		"quick-clip-discard-source",
+		async (_, screenVideoPath: string, clipPath: string) => {
+			if (
+				typeof screenVideoPath !== "string" ||
+				!isPathWithin(screenVideoPath, deps.recordingsDir)
+			) {
+				return { success: false, error: "Not an OpenScreen recording." };
+			}
+			const clip = typeof clipPath === "string" ? resolveKnownClip(clipPath) : null;
+			const clipSize = clip
+				? await fs.stat(clip).then(
+						(stats) => stats.size,
+						() => 0,
+					)
+				: 0;
+			if (clipSize <= 0) {
+				return { success: false, error: "The clip is not saved; the recording was kept." };
+			}
+			const parsed = path.parse(screenVideoPath);
+			await Promise.all(
+				[
+					screenVideoPath,
+					`${screenVideoPath}.cursor.json`,
+					path.join(parsed.dir, `${parsed.name}.session.json`),
+				].map((target) => fs.rm(target, { force: true }).catch(() => undefined)),
+			);
+			return { success: true };
+		},
+	);
 
 	// --- Area selection -------------------------------------------------------------
 

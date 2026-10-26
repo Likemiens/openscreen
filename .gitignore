@@ -65,5 +65,7 @@ result-*
 
 **/*.import
 
-# Auto-caption model + ORT wasm — regenerated at build by scripts/fetch-caption-model.mjs
+# ONNX Runtime build for transcription — copied at build by scripts/copy-speech-runtime.mjs
+/speech-runtime/
+# Left over from builds that bundled the old caption model
 /caption-assets/
