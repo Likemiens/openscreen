@@ -38,12 +38,6 @@ jobs:
       - name: Setup Node.js
         uses: ./.github/actions/setup
 
-      - name: Cache caption assets
-        uses: actions/cache@v4
-        with:
-          path: caption-assets
-          key: caption-assets-${{ runner.os }}-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
-
       - name: Build Windows app
         run: npm run build:win -- --publish never
 
@@ -51,34 +45,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openscreen-windows
-          path: release/**/Openscreen.Setup.*.exe
-          if-no-files-found: error
-          retention-days: 30
-
-  build-windows-store:
-    name: Windows Store package
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: ./.github/actions/setup
-
-      - name: Cache caption assets
-        uses: actions/cache@v4
-        with:
-          path: caption-assets
-          key: caption-assets-${{ runner.os }}-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
-
-      - name: Build Windows Store package
-        run: npm run build:win:store -- --publish never
-
-      - name: Upload Windows Store package
-        uses: actions/upload-artifact@v4
-        with:
-          name: openscreen-windows-store
-          path: release/**/Openscreen.Setup.*.appx
+          path: release/**/*-Setup.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -105,12 +72,6 @@ jobs:
         run: npm rebuild sharp
         env:
           npm_config_build_from_source: "false"
-
-      - name: Cache caption assets
-        uses: actions/cache@v4
-        with:
-          path: caption-assets
-          key: caption-assets-${{ runner.os }}-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
 
       - name: Resolve macOS signing
         id: signing
@@ -194,7 +155,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ matrix.arch }}"
-          DMG_NAME="Openscreen-Mac-${ARCH}-${VERSION}.dmg"
+          DMG_NAME="OpenScreen-Mac-${ARCH}-${VERSION}.dmg"
           RELEASE_DIR="release/${VERSION}"
           DMG_OUTPUT="${RELEASE_DIR}/${DMG_NAME}"
           STAGING="${RELEASE_DIR}/dmg-staging"
@@ -207,7 +168,7 @@ jobs:
 
           hdiutil create \
             -srcfolder "$STAGING" \
-            -volname "Openscreen" \
+            -volname "OpenScreen" \
             -fs HFS+ \
             -fsargs "-c c=64,a=16,e=16" \
             -format UDBZ \
@@ -268,12 +229,6 @@ jobs:
 
       - name: Install pacman build dependencies
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools
-
-      - name: Cache caption assets
-        uses: actions/cache@v4
-        with:
-          path: caption-assets
-          key: caption-assets-${{ runner.os }}-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
 
       - name: Build Linux app
         run: npm run build:linux -- --publish never
@@ -385,11 +340,13 @@ jobs:
 
       - name: Publish release assets
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          # A fork without the release token publishes with the workflow's own token.
+          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN || github.token }}
           TAG: ${{ steps.release.outputs.tag }}
           PRERELEASE_FLAG: ${{ steps.release.outputs.prerelease_flag }}
           NOTES_START_TAG: ${{ steps.release.outputs.notes_start_tag }}
         run: |
+          TITLE="OpenScreen Creator Edition ${TAG#v}"
           mapfile -t FILES < <(find artifacts -type f | sort)
           if [[ "${#FILES[@]}" -eq 0 ]]; then
             echo "::error::No installer artifacts were downloaded"
@@ -404,12 +361,18 @@ jobs:
             # prior release by date) doesn't work for this fork because the v1.4.0
             # release in the fork was re-published after v1.5.0, which makes GitHub
             # pick v1.4.0 as the "previous" for any v1.5.x release.
+            # Hand-written notes in docs/releases/<tag>.md win over generated ones.
+            NOTES_FILE="docs/releases/${TAG}.md"
+            if [[ -f "$NOTES_FILE" ]]; then
+              NOTES_ARGS=(--notes-file "$NOTES_FILE")
+            else
+              NOTES_ARGS=(--generate-notes --notes-start-tag "$NOTES_START_TAG")
+            fi
             # shellcheck disable=SC2086
             gh release create "$TAG" "${FILES[@]}" \
               --target "$GITHUB_SHA" \
-              --title "$TAG" \
-              --generate-notes \
-              --notes-start-tag "$NOTES_START_TAG" \
+              --title "$TITLE" \
+              "${NOTES_ARGS[@]}" \
               $PRERELEASE_FLAG
           fi
 
@@ -417,10 +380,10 @@ jobs:
             gh release edit "$TAG" \
               --draft=false \
               --latest=false \
-              --title "$TAG"
+              --title "$TITLE"
           else
             gh release edit "$TAG" \
               --draft=false \
               --latest \
-              --title "$TAG"
+              --title "$TITLE"
           fi

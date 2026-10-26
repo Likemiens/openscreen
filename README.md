@@ -27,6 +27,12 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/Likemiens/openscreen/releases/latest"><strong>Download the latest release</strong></a> (Windows, macOS, Linux)
+  &nbsp;·&nbsp;
+  <a href="https://github.com/Likemiens/openscreen/fork"><strong>Fork it</strong></a> and make it yours
+</p>
+
 
 OpenScreen was originally positioned as a free, open-source alternative to Screen Studio: something you can use to create quick, polished product demos and walkthroughs for X, Reddit, YouTube, documentation, landing pages, or internal demos.
 
@@ -62,6 +68,7 @@ The default [`creator-edition`](https://github.com/Likemiens/openscreen/tree/cre
 
 - **Area, window or screen capture.** The area picker supports free, 16:9, 4:3, 1:1 and 9:16 selections, exact 720p and 1080p sizes, moving, resizing and keyboard nudging. It shows the size in real pixels, and the selection is outlined while it records (the outline never ends up in the video).
 - **Quality is chosen before you record.** 720p, 1080p or Original, at 30 or 60 fps, with an estimate of megabytes per minute. The recording is made at that frame rate, and the setting is remembered.
+- **Long recordings are kept as recorded.** A recording of five minutes or more (a meeting, a lecture) is not re-encoded: the original file is moved into your folder the moment you stop, whatever the quality setting says. While recording, **Restart** and **Delete** ask for a second click once the take is longer than a few seconds, and a discarded take goes to the Recycle Bin.
 - **Saved the moment you stop.** A clip that needs no crop or resize is saved as recorded, without re-encoding. Anything else gets a single hardware crop/scale pass that takes a second or two for a short clip, instead of a full render in the editor. Bitrates are tuned for screen content, so files are small enough to send.
 - **One hotkey from anywhere.** OpenScreen stays in the tray after you close the recorder. The hotkey starts a capture and stops the one in progress. It defaults to <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> where that is free; Windows 11 reserves it for the Snipping Tool, so on most PCs it becomes <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>. Change it under **⋯ → Record shortcut**.
 - **Light when idle.** A hidden recorder gives its window back after a minute; only the tray icon and the hotkey remain, and the recorder is rebuilt with your last setup when you need it. Optional **Launch at login** starts straight into the tray.
@@ -74,6 +81,14 @@ The default [`creator-edition`](https://github.com/Likemiens/openscreen/tree/cre
 ### Studio recordings
 
 Turn on the camera or switch the cursor to **Editable** (window and screen captures) and the recording keeps its separate tracks for Studio instead of being saved instantly. Stop then opens the export step: **Save anywhere**, **Edit in Studio**, or **Publish & get link**, each rendering the final MP4 with your cursor and camera.
+
+### Transcripts
+
+Press **Transcribe** on the clip card and the conversation is written next to the video: `<clip>.txt` (paragraphs with timestamps) and `<clip>.srt` (subtitles most players pick up by themselves). It runs on your computer; nothing is uploaded.
+
+- **Whisper large-v3-turbo** on the graphics card where WebGPU is available, **Whisper small** on the processor elsewhere. The language is detected by itself. A 77-second meeting takes about 14 seconds on a mid-range GPU and about 30 on the processor.
+- The speech model is not in the installer. It downloads once, the first time you transcribe (about 560 MB for the GPU model, 250 MB for the processor one), and works offline after that.
+- Renaming or deleting a clip takes its transcript along. Studio's auto captions use the same engine.
 
 ### Studio: frame it, cut it, export it
 
@@ -125,7 +140,7 @@ Creator Edition also includes:
 - Webcam overlay with picture-in-picture, drag-to-position, mirroring, and shape options.
 - Auto or manual zooms with adjustable depth, duration, easing, and pixel-precise position; auto-zoom follows your cursor as you work.
 - Custom cursor size, smoothing, and click effects, with cursor themes and post-recording path smoothing.
-- Automatic captions for voiceovers, generated on-device with no upload (works offline).
+- Automatic captions and transcripts (`.txt` + `.srt`), generated on-device with Whisper and no upload; the speech model downloads once on first use.
 - Wallpapers, solid colors, gradients, or your own background image.
 - Motion blur.
 - Crop (visually or by exact source pixels), trim, and per-segment speed control on the timeline.
@@ -141,14 +156,14 @@ Creator Edition also includes:
 
 ## Installation
 
-Download the latest installer for your platform from the [GitHub Releases](https://github.com/EtienneLescot/openscreen/releases) page.
+Download the latest installer for your platform from the [Releases page](https://github.com/Likemiens/openscreen/releases/latest). The installers are not code-signed, so the first launch shows a warning on Windows and macOS; the steps below get past it.
 
 ### macOS
 
-Download the `.dmg` installer directly from the [Releases page](https://github.com/EtienneLescot/openscreen/releases). If Gatekeeper blocks the app, you can bypass it by running the following command in your terminal after installation:
+Download `OpenScreen-Mac-arm64-<version>.dmg` (Apple Silicon: M1 and later) or `OpenScreen-Mac-x64-<version>.dmg` (Intel) from the [Releases page](https://github.com/Likemiens/openscreen/releases/latest). If Gatekeeper blocks the app, you can bypass it by running the following command in your terminal after installation:
 
 ```bash
-xattr -rd com.apple.quarantine /Applications/Openscreen.app
+xattr -rd com.apple.quarantine /Applications/OpenScreen.app
 ```
 
 Note: Give your terminal Full Disk Access in **System Settings > Privacy & Security** to grant you access and then run the above command.
@@ -160,63 +175,37 @@ After running this command, proceed to **System Settings > Privacy & Security** 
 
 ### Windows
 
-Download the `.exe` installer directly from the [Releases page](https://github.com/EtienneLescot/openscreen/releases).
+Download `OpenScreen-Custom-<version>-Setup.exe` from the [Releases page](https://github.com/Likemiens/openscreen/releases/latest) and run it. If SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
+
+The installer asks whether to install **transcription** (speech to text and subtitles). It takes 26 MB; the speech model is downloaded only the first time you transcribe. Clear the box to leave it out, or pass `/NOTRANSCRIPTION` for a silent install (`/S`); run the installer again to add it later.
 
 ### Linux
 
-Three packages are published to the [Releases page](https://github.com/EtienneLescot/openscreen/releases) for each version. Pick the one that matches your distro:
+Three packages are published to the [Releases page](https://github.com/Likemiens/openscreen/releases/latest) for each version. Pick the one that matches your distro:
 
 **Debian / Ubuntu / Pop!_OS (`.deb`)**
 ```bash
-sudo apt install ./Openscreen-Linux-latest.deb
+sudo apt install ./OpenScreen-Linux-*.deb
 ```
 
 **Arch / Manjaro (`.pacman`)**
 ```bash
-sudo pacman -U Openscreen-Linux-latest.pacman
+sudo pacman -U OpenScreen-Linux-*.pacman
 ```
 
 **Any distro (`.AppImage`)**
 ```bash
-chmod +x Openscreen-Linux-*.AppImage
-./Openscreen-Linux-*.AppImage
+chmod +x OpenScreen-Linux-*.AppImage
+./OpenScreen-Linux-*.AppImage
 ```
 
-**NixOS / Nix (flake)**
-
-Try without installing:
-```bash
-nix run github:EtienneLescot/openscreen
-```
-
-Install into your user profile:
-```bash
-nix profile install github:EtienneLescot/openscreen
-```
-
-For a NixOS system config (flake):
-```nix
-{
-  inputs.openscreen.url = "github:EtienneLescot/openscreen";
-
-  outputs = { nixpkgs, openscreen, ... }: {
-    nixosConfigurations.<host> = nixpkgs.lib.nixosSystem {
-      modules = [
-        openscreen.nixosModules.default
-        { programs.openscreen.enable = true; }
-      ];
-    };
-  };
-}
-```
-
-For Home Manager, use `openscreen.homeManagerModules.default` with the same `programs.openscreen.enable = true;`.
+**NixOS / Nix:** the flake in this repository comes from upstream OpenScreen and is not maintained for Creator Edition yet; use the AppImage.
 
 You may need to grant screen recording permissions depending on your desktop environment.
 
 **Sandbox error:** If the AppImage fails to launch with a "sandbox" error, run it with `--no-sandbox`:
 ```bash
-./Openscreen-Linux-*.AppImage --no-sandbox
+./OpenScreen-Linux-*.AppImage --no-sandbox
 ```
 
 ### Platform differences
@@ -254,6 +243,7 @@ This repository is the community-maintained continuation of OpenScreen.
 
 Official / trusted links:
 
+* OpenScreen Creator Edition (this repository): https://github.com/Likemiens/openscreen
 * Original archived repository: https://github.com/siddharthvaddem/openscreen
 * Community continuation: https://github.com/EtienneLescot/openscreen
 
