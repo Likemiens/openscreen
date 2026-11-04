@@ -30,6 +30,7 @@ OpenScreen is a free, open-source screen recorder and video editor (Electron + R
 - `scripts/` — native build scripts, diagnostic tools
 - `nix/`, `flake.nix` — Linux packaging
 - `release/`, `dist-electron/` — build artifacts (gitignored)
+- `site/` — the Marquee landing page: static HTML, CSS and JS with no build step, served by Vercel with `site` as the project root (`site/vercel.json` skips builds when nothing in `site/` changed). Preview with `python -m http.server --directory site`; the logo files are in `site/brand/`
 
 ## Code style
 
