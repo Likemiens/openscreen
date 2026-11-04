@@ -185,7 +185,7 @@ export default function App() {
 			return (
 				<div>
 					<div className="w-full h-full bg-background text-foreground">
-						<h1>Openscreen</h1>
+						<h1>Marquee</h1>
 					</div>
 				</div>
 			);

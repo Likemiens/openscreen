@@ -31,9 +31,9 @@
 		"zoomOut": "Уменьшить",
 		"toggleFullScreen": "Полноэкранный режим",
 		"recordingStatus": "Запись: {{source}}",
-		"about": "О OpenScreen",
+		"about": "О Marquee",
 		"services": "Сервисы",
-		"hide": "Скрыть OpenScreen",
+		"hide": "Скрыть Marquee",
 		"hideOthers": "Скрыть остальные",
 		"unhide": "Показать все"
 	},

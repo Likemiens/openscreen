@@ -31,9 +31,9 @@
 		"zoomOut": "Riduci",
 		"toggleFullScreen": "Attiva/disattiva schermo intero",
 		"recordingStatus": "Registrazione: {{source}}",
-		"about": "Info su OpenScreen",
+		"about": "Info su Marquee",
 		"services": "Servizi",
-		"hide": "Nascondi OpenScreen",
+		"hide": "Nascondi Marquee",
 		"hideOthers": "Nascondi gli altri",
 		"unhide": "Mostra tutto"
 	},

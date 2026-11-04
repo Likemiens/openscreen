@@ -1,6 +1,6 @@
 # AGENTS.md
 
-OpenScreen is a free, open-source screen recorder and video editor (Electron + React + TypeScript + Pixi.js) maintained as a continuation of the original v1.5.0 release. This file is the canonical guide for any AI coding agent working in this repo.
+Marquee (formerly OpenScreen; the repository and the npm package keep the `openscreen` name) is a free, open-source screen recorder and video editor (Electron + React + TypeScript + Pixi.js) maintained as a continuation of the original v1.5.0 release. This file is the canonical guide for any AI coding agent working in this repo.
 
 ## Setup commands
 
@@ -68,13 +68,13 @@ Unit/browser tests can't exercise real capture (native screen recording, a physi
 **Launch the app**
 
 - Normal: `npm run dev` — Vite serves the renderer and `vite-plugin-electron` opens the Electron window. The main process logs `Global shortcut registered: CommandOrControl+Shift+O` (shows the HUD) and `Record shortcut registered: <accelerator>` (starts/stops a capture) when ready. The record shortcut is the first free one of Win+Shift+R, Ctrl+Alt+R, Win+Shift+X, Ctrl+Shift+Space, or the user's own from `app-settings.json`.
-- The app is **tray-resident** on Windows/macOS: closing the HUD hides it, and a HUD hidden for 60 s (`OPENSCREEN_HUD_IDLE_RELEASE_MS` overrides) is destroyed and rebuilt on demand from persisted settings. With no window the process is still alive — quit from the tray menu or HUD **⋯ → Quit OpenScreen**. `--hidden` starts straight into the tray (used by Launch at login).
+- The app is **tray-resident** on Windows/macOS: closing the HUD hides it, and a HUD hidden for 60 s (`OPENSCREEN_HUD_IDLE_RELEASE_MS` overrides) is destroyed and rebuilt on demand from persisted settings. With no window the process is still alive — quit from the tray menu or HUD **⋯ → Quit Marquee**. `--hidden` starts straight into the tray (used by Launch at login).
 - The app is single-instance: a lock dir at `%TEMP%/openscreen-single-instance-<user>.lock` (macOS: `$TMPDIR`). If a stale Electron process holds it, a new launch quits silently (exit 0, no window). Kill leftover `electron` processes and delete that lock dir before relaunching.
 - **From a git worktree** (no `node_modules`/native binaries): junction/symlink `node_modules` from the main checkout (deps are usually identical — check `package-lock.json`), and copy the prebuilt native capture binaries from `electron/native/bin/<platform>/` (gitignored — rebuilding needs the full VS/Xcode toolchain). Then `npm run dev` works normally.
 
 **Granting access**
 
-- `request_access` resolves names against installed apps. A **dev build runs as `electron.exe`** (or `Electron.app`), *not* the installed `Openscreen` — grant **`electron.exe`** or the dev window stays masked in screenshots. Non-allowlisted windows are masked (solid rectangles); the screenshot note lists their process names to add.
+- `request_access` resolves names against installed apps. A **dev build runs as `electron.exe`** (or `Electron.app`), *not* the installed `Marquee` — grant **`electron.exe`** or the dev window stays masked in screenshots. Non-allowlisted windows are masked (solid rectangles); the screenshot note lists their process names to add.
 
 **The HUD widget** (recording controller)
 
@@ -87,7 +87,7 @@ Unit/browser tests can't exercise real capture (native screen recording, a physi
 **The tray icon** (bottom-right notification area)
 
 - Because the HUD skips the taskbar and can be minimized/hidden, the **system-tray icon is the reliable way to refocus the app**: **left-click or double-click reopens/focuses the HUD** (`showMainWindow`). Its icon swaps to a red dot while recording.
-- **Right-click → context menu**: *Record Area…* / *Open* / *Quit* when idle, or ***Stop Recording*** while recording (mirrors the HUD's stop). Tooltip shows `OpenScreen — <shortcut> to record` or `Recording: <source>`. Use this to stop a recording if the HUD isn't reachable.
+- **Right-click → context menu**: *Record Area…* / *Open* / *Quit* when idle, or ***Stop Recording*** while recording (mirrors the HUD's stop). Tooltip shows `Marquee — <shortcut> to record` or `Recording: <source>`. Use this to stop a recording if the HUD isn't reachable.
 
 **End-to-end flow (record → edit)**
 

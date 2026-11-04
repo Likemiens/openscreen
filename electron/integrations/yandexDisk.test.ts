@@ -147,13 +147,13 @@ describe("Yandex Disk uploads", () => {
 		fs.rmSync(workDir, { recursive: true, force: true });
 	});
 
-	it("refuses files OpenScreen did not create", async () => {
+	it("refuses files Marquee did not create", async () => {
 		const stray = path.join(clipsDir, "stray.mp4");
 		fs.writeFileSync(stray, "video");
 
 		expect(await upload({ filePath: stray })).toEqual({
 			success: false,
-			error: "Only files created by OpenScreen can be uploaded.",
+			error: "Only files created by Marquee can be uploaded.",
 		});
 		expect(statuses()).toHaveLength(0);
 	});

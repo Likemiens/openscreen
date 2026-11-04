@@ -8,7 +8,9 @@ import {
 } from "../src/lib/appSettings";
 
 const SETTINGS_FILE_NAME = "app-settings.json";
-const DEFAULT_SAVE_FOLDER_NAME = "OpenScreen";
+const DEFAULT_SAVE_FOLDER_NAME = "Marquee";
+// Where clips went before the rename; an existing folder stays the default (decision D-029).
+const LEGACY_SAVE_FOLDER_NAME = "OpenScreen";
 
 /** Main-process settings persisted next to the other user data files. */
 export class AppSettingsStore {
@@ -43,8 +45,14 @@ export class AppSettingsStore {
 		return this.get();
 	}
 
-	getDefaultSaveFolder(): string {
-		return path.join(app.getPath("videos"), DEFAULT_SAVE_FOLDER_NAME);
+	async getDefaultSaveFolder(): Promise<string> {
+		const videos = app.getPath("videos");
+		const legacy = path.join(videos, LEGACY_SAVE_FOLDER_NAME);
+		const hasLegacy = await fs.stat(legacy).then(
+			(stats) => stats.isDirectory(),
+			() => false,
+		);
+		return hasLegacy ? legacy : path.join(videos, DEFAULT_SAVE_FOLDER_NAME);
 	}
 
 	/** The folder clips are written to, created on demand. */
@@ -59,7 +67,7 @@ export class AppSettingsStore {
 			}
 		}
 
-		const fallback = this.getDefaultSaveFolder();
+		const fallback = await this.getDefaultSaveFolder();
 		await fs.mkdir(fallback, { recursive: true });
 		return fallback;
 	}

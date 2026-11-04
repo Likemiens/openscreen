@@ -74,7 +74,7 @@ const STACK_BOTTOM = 24;
 const MIN_WIDTH = 220;
 
 const PREVIEW_CLIP: ReadyClip = {
-	path: "C:\\Users\\you\\Videos\\OpenScreen\\Checkout flow.mp4",
+	path: "C:\\Users\\you\\Videos\\Marquee\\Checkout flow.mp4",
 	title: "Checkout flow",
 	sizeBytes: 6_400_000,
 	width: 1280,

@@ -1,3 +1,5 @@
+// First: names the app and picks its data folder before any module asks for userData.
+import "./appIdentity";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,10 +56,9 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-app.setName("OpenScreen");
 if (process.platform === "win32") {
 	app.setAppUserModelId("com.etiennelescot.openscreen");
-	process.title = "OpenScreen";
+	process.title = app.name;
 }
 
 // Use Screen & System Audio Recording permissions instead of the CoreAudio Tap API on macOS.
@@ -157,7 +158,7 @@ const isMac = process.platform === "darwin";
 const trayIconSize = isMac ? 16 : 24;
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon("openscreen.png", trayIconSize);
+const defaultTrayIcon = getTrayIcon("app-icon.png", trayIconSize);
 const recordingTrayIcon = getTrayIcon("rec-button.png", trayIconSize);
 
 function attachHudLifecycle(win: BrowserWindow) {
@@ -247,7 +248,7 @@ function showTrayHintOnce() {
 
 	const shortcutLabel = formatAccelerator(activeQuickRecordShortcut, process.platform);
 	new Notification({
-		title: "OpenScreen is still running",
+		title: "Marquee is still running",
 		body: shortcutLabel
 			? `It waits in the tray. Press ${shortcutLabel} to record, or right-click the tray icon to quit.`
 			: "It waits in the tray. Right-click the tray icon to record or quit.",
@@ -358,7 +359,7 @@ function setupApplicationMenu() {
 			submenu: [
 				{
 					role: "about",
-					label: mainT("common", "actions.about") || "About OpenScreen",
+					label: mainT("common", "actions.about") || "About Marquee",
 				},
 				{ type: "separator" },
 				{
@@ -368,7 +369,7 @@ function setupApplicationMenu() {
 				{ type: "separator" },
 				{
 					role: "hide",
-					label: mainT("common", "actions.hide") || "Hide OpenScreen",
+					label: mainT("common", "actions.hide") || "Hide Marquee",
 				},
 				{
 					role: "hideOthers",
@@ -529,8 +530,8 @@ function updateTrayMenu(recording: boolean = false) {
 				source: selectedSourceName,
 			}) || `Recording: ${selectedSourceName}`
 		: idleShortcutLabel
-			? `OpenScreen — ${idleShortcutLabel} to record`
-			: "OpenScreen";
+			? `Marquee — ${idleShortcutLabel} to record`
+			: "Marquee";
 	const shortcutLabel = formatAccelerator(activeQuickRecordShortcut, process.platform);
 	const shortcutHint = shortcutLabel ? `  (${shortcutLabel})` : "";
 	const menuTemplate: Electron.MenuItemConstructorOptions[] = recording
@@ -829,7 +830,7 @@ appReady?.then(async () => {
 		editorHasUnsavedChanges = false;
 		if (Notification.isSupported() && (error || savedPath)) {
 			const notification = new Notification({
-				title: error ? "OpenScreen · Export failed" : "OpenScreen · Video saved",
+				title: error ? "Marquee · Export failed" : "Marquee · Video saved",
 				body: error ?? savedPath ?? "Export complete",
 			});
 			if (savedPath && !error) {

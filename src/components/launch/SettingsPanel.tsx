@@ -216,7 +216,7 @@ export function SettingsPanel({
 				</button>
 				<button type="button" className={styles.menuItem} onClick={onQuit}>
 					<Power size={15} className={styles.menuItemIcon} aria-hidden="true" />
-					<span className="flex-1">Quit OpenScreen</span>
+					<span className="flex-1">Quit Marquee</span>
 				</button>
 			</div>
 		</div>

@@ -1,13 +1,15 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  // Kept from OpenScreen: upgrades replace the old install, keep its macOS permissions and
+  // its Windows shortcuts and notifications (decision D-029).
   "appId": "com.etiennelescot.openscreen",
   "asar": true,
   // .node binaries can't be dlopen'd from inside an asar — must live unpacked.
   "asarUnpack": [
     "**/*.node"
   ],
-  "productName": "OpenScreen",
+  "productName": "Marquee",
   // Copy the ONNX Runtime build transcription runs on into speech-runtime/ (idempotent).
   "beforePack": "scripts/before-pack.cjs",
   // Nothing from node_modules ships (see "files"), so there is nothing to rebuild for Electron.
@@ -76,10 +78,10 @@
       }
     ],
     "extendInfo": {
-      "NSAudioCaptureUsageDescription": "OpenScreen needs audio capture permission to record system audio.",
-      "NSMicrophoneUsageDescription": "OpenScreen needs microphone access to record voice audio.",
-      "NSCameraUsageDescription": "OpenScreen needs camera access to record webcam video.",
-      "NSScreenCaptureUsageDescription": "OpenScreen needs screen recording permission to detect and capture windows.",
+      "NSAudioCaptureUsageDescription": "Marquee needs audio capture permission to record system audio.",
+      "NSMicrophoneUsageDescription": "Marquee needs microphone access to record voice audio.",
+      "NSCameraUsageDescription": "Marquee needs camera access to record webcam video.",
+      "NSScreenCaptureUsageDescription": "Marquee needs screen recording permission to detect and capture windows.",
       "NSCameraUseContinuityCameraDeviceType": true
     }
   },
@@ -95,12 +97,12 @@
     "category": "AudioVideo"
   },
   "win": {
-	"executableName": "OpenScreen",
+	"executableName": "Marquee",
     "target": [
       "nsis"
     ],
     "icon": "icons/icons/win/icon.ico",
-    "artifactName": "${productName}-Custom-${version}-Setup.${ext}",
+    "artifactName": "${productName}-${version}-Setup.${ext}",
     "extraResources": [
       {
         "from": "electron/native/bin",
