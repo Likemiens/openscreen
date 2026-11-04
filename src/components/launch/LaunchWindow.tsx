@@ -69,8 +69,10 @@ const DISCARD_ARMED_CLASS = "!bg-[var(--hud-red-soft)] !text-[var(--hud-red)]";
 // tooltips above the topmost surface have room to render.
 const SIDE_MARGIN = 72;
 const TOP_MARGIN = 40;
-// Distance from the window's bottom edge to the bar; matches the `bottom-6` on the stack.
-const STACK_BOTTOM = 24;
+// Distance from the window's bottom edge to the bar; matches the `bottom-10` on the stack. The
+// bar's shadow reaches 34 px below it: with less room the window edge cut it off, which showed
+// as soon as the dock was dragged away from the bottom of the screen.
+const STACK_BOTTOM = 40;
 const MIN_WIDTH = 220;
 
 const PREVIEW_CLIP: ReadyClip = {
@@ -896,7 +898,7 @@ export function LaunchWindow() {
 			<div
 				ref={stackRef}
 				data-hud-stack="true"
-				className="fixed bottom-6 left-1/2 flex w-max -translate-x-1/2 flex-col items-center gap-2.5"
+				className="fixed bottom-10 left-1/2 flex w-max -translate-x-1/2 flex-col items-center gap-2.5"
 			>
 				<HudToasts />
 

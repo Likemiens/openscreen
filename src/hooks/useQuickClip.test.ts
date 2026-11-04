@@ -162,6 +162,11 @@ describe("useQuickClip", () => {
 			clip: { share: { status: "copied", url: "https://disk.yandex.ru/i/abc" } },
 		});
 		expect(window.electronAPI.setHudBusy).toHaveBeenLastCalledWith(false);
+		// Said plainly, not only on the card.
+		expect(toastMock.success).toHaveBeenCalledWith(
+			"Video uploaded to Yandex Disk",
+			expect.objectContaining({ description: expect.stringContaining("link is copied") }),
+		);
 	});
 
 	it("reports a rejected upload on the card", async () => {

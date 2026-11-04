@@ -65,10 +65,18 @@ describe("ClipCard", () => {
 		expect(screen.getByText("Saved to Videos\\OpenScreen")).toBeInTheDocument();
 	});
 
-	it("shares by link when Yandex Disk is connected", () => {
+	it("makes Copy file the main action and Copy link the second one", () => {
 		const props = renderCard();
 
-		fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+		const copyFile = screen.getByTestId("hud-clip-copy-file");
+		const copyLink = screen.getByRole("button", { name: "Copy link" });
+		// Copy file comes first, as the primary button.
+		expect(
+			copyFile.compareDocumentPosition(copyLink) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(copyFile.className).not.toBe(copyLink.className);
+
+		fireEvent.click(copyLink);
 
 		expect(props.onShare).toHaveBeenCalledTimes(1);
 		expect(props.onConnectYandex).not.toHaveBeenCalled();
@@ -104,6 +112,9 @@ describe("ClipCard", () => {
 		});
 
 		expect(screen.getByRole("button", { name: "Link copied" })).toBeEnabled();
+		expect(screen.getByTestId("hud-clip-share-status")).toHaveTextContent(
+			"Uploaded · disk.yandex.ru/i/abc",
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Open" }));
 
 		expect(props.onOpenLink).toHaveBeenCalledWith("https://disk.yandex.ru/i/abc");

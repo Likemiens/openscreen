@@ -136,14 +136,30 @@ async function putFile(
 	onProgress?: (fraction: number) => void,
 ): Promise<void> {
 	const stats = await fs.stat(filePath);
+	const stream = createReadStream(filePath);
 
-	await new Promise<void>((resolve, reject) => {
+	try {
+		await putStream(uploadUrl, stream, stats.size, onProgress);
+	} finally {
+		// A failed upload must not keep the file open: Windows refuses to move an open file
+		// to the Recycle Bin, so the clip could not be deleted until the app restarted.
+		stream.destroy();
+	}
+}
+
+function putStream(
+	uploadUrl: string,
+	stream: ReturnType<typeof createReadStream>,
+	size: number,
+	onProgress?: (fraction: number) => void,
+): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
 		const request = httpsRequest(
 			new URL(uploadUrl),
 			{
 				method: "PUT",
 				headers: {
-					"Content-Length": stats.size,
+					"Content-Length": size,
 					"Content-Type": "application/octet-stream",
 				},
 			},
@@ -171,17 +187,16 @@ async function putFile(
 		);
 
 		request.on("error", reject);
-		const stream = createReadStream(filePath);
 		stream.on("error", (error) => request.destroy(error));
-		if (onProgress && stats.size > 0) {
+		if (onProgress && size > 0) {
 			let sentBytes = 0;
 			let lastReportAt = 0;
 			stream.on("data", (chunk) => {
 				sentBytes += chunk.length;
 				const now = Date.now();
-				if (now - lastReportAt < UPLOAD_PROGRESS_INTERVAL_MS && sentBytes < stats.size) return;
+				if (now - lastReportAt < UPLOAD_PROGRESS_INTERVAL_MS && sentBytes < size) return;
 				lastReportAt = now;
-				onProgress(Math.min(1, sentBytes / stats.size));
+				onProgress(Math.min(1, sentBytes / size));
 			});
 		}
 		stream.pipe(request);

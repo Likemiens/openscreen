@@ -156,6 +156,15 @@ export function useQuickClip({ draft, onConsumed, onFallbackToDraft }: UseQuickC
 				// Release the HUD even if the card this upload belonged to is gone.
 				uploadingPaths.current.delete(status.filePath);
 				holdHud(`upload:${status.filePath}`, false);
+				// Said out loud: the card's own line is easy to miss, and the upload may have
+				// finished after the card was closed.
+				if (status.state === "success") {
+					toast.success("Video uploaded to Yandex Disk", {
+						description: "The link is copied. Paste it anywhere.",
+					});
+				} else {
+					toast.error("Could not upload the video", { description: status.error });
+				}
 			}
 			setState((current) => {
 				if (current.status !== "ready" || current.clip.path !== status.filePath) return current;

@@ -172,11 +172,27 @@ export function ClipCard({
 			</div>
 
 			<div className="mt-3 flex items-center gap-1.5">
+				{/* The file is always there and needs no account: it is the main way out. */}
+				<button
+					type="button"
+					data-testid="hud-clip-copy-file"
+					className={`${styles.button} ${styles.buttonPrimary} flex-1`}
+					onClick={() => {
+						void onCopyFile().then((copied) => setFileCopied(copied));
+					}}
+				>
+					{fileCopied ? (
+						<Check size={13} aria-hidden="true" />
+					) : (
+						<Copy size={13} aria-hidden="true" />
+					)}
+					{fileCopied ? "Copied" : "Copy file"}
+				</button>
 				{yandexConnected ? (
 					<button
 						type="button"
 						data-testid="hud-clip-share"
-						className={`${styles.button} ${styles.buttonPrimary} flex-1`}
+						className={`${styles.button} flex-1`}
 						disabled={uploading}
 						onClick={onShare}
 					>
@@ -199,21 +215,6 @@ export function ClipCard({
 						Set up link sharing
 					</button>
 				)}
-				<button
-					type="button"
-					data-testid="hud-clip-copy-file"
-					className={`${styles.button} ${yandexConnected ? "" : styles.buttonPrimary} flex-1`}
-					onClick={() => {
-						void onCopyFile().then((copied) => setFileCopied(copied));
-					}}
-				>
-					{fileCopied ? (
-						<Check size={13} aria-hidden="true" />
-					) : (
-						<Copy size={13} aria-hidden="true" />
-					)}
-					{fileCopied ? "Copied" : "Copy file"}
-				</button>
 				{onTranscribe && (
 					<Tooltip
 						content={
@@ -295,8 +296,13 @@ export function ClipCard({
 				</div>
 			)}
 			{share.status === "copied" && (
-				<div className={`${styles.caption} mt-2 flex items-center gap-1.5`}>
-					<span className="truncate">{share.url}</span>
+				<div
+					className={`${styles.caption} mt-2 flex items-center gap-1.5`}
+					data-testid="hud-clip-share-status"
+					title={share.url}
+				>
+					<Check size={12} className={styles.statusOk} aria-hidden="true" />
+					<span className="truncate">Uploaded · {share.url.replace(/^https?:\/\//, "")}</span>
 					<button type="button" className={styles.link} onClick={() => onOpenLink(share.url)}>
 						Open
 					</button>

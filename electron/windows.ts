@@ -19,6 +19,10 @@ const ASSET_BASE_URL_ARG = `--asset-base-url=${pathToFileURL(`${ASSET_BASE_DIR}$
 
 let hudOverlayWindow: BrowserWindow | null = null;
 
+// How far the HUD window's shadow margin may hang below the work area by default: the bar sits
+// 40 px above the window's bottom edge, 29 px above the work area's as before.
+const HUD_SHADOW_OVERHANG = 11;
+
 // Where the user last left the HUD (bottom-centre anchor, matching the anchor the
 // renderer-driven resize preserves). The HUD window is released while the app idles
 // in the tray, so this lets it reappear where it was instead of jumping home.
@@ -114,7 +118,9 @@ export function createHudOverlayWindow(options: { startHidden?: boolean } = {}):
 	const windowHeight = 160;
 
 	let x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2);
-	let y = Math.floor(workArea.y + workArea.height - windowHeight - 5);
+	// The window keeps a transparent margin under the bar for its shadow (STACK_BOTTOM in the
+	// renderer); letting that margin overlap the taskbar keeps the bar itself where it was.
+	let y = Math.floor(workArea.y + workArea.height - windowHeight + HUD_SHADOW_OVERHANG);
 
 	// Reuse the last position only while it is still on a connected display.
 	if (lastHudAnchor) {
@@ -127,7 +133,7 @@ export function createHudOverlayWindow(options: { startHidden?: boolean } = {}):
 			lastHudAnchor.centerX >= area.x &&
 			lastHudAnchor.centerX <= area.x + area.width &&
 			lastHudAnchor.bottomY > area.y &&
-			lastHudAnchor.bottomY <= area.y + area.height + 8;
+			lastHudAnchor.bottomY <= area.y + area.height + HUD_SHADOW_OVERHANG + 8;
 		if (insideDisplay) {
 			x = Math.round(lastHudAnchor.centerX - windowWidth / 2);
 			y = Math.round(lastHudAnchor.bottomY - windowHeight);

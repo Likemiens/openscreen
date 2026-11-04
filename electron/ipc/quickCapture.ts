@@ -197,6 +197,28 @@ async function copyFileToClipboard(filePath: string): Promise<"file" | "path"> {
 	return "path";
 }
 
+/**
+ * Moves a file to the Recycle Bin, waiting out short-lived locks: right after a clip is
+ * written, Windows Defender or the thumbnail cache may still have it open, and the Recycle
+ * Bin refuses an open file.
+ */
+async function trashWhenReleased(filePath: string, attempts = 6): Promise<void> {
+	for (let attempt = 1; ; attempt += 1) {
+		try {
+			await shell.trashItem(filePath);
+			return;
+		} catch (error) {
+			if (attempt >= attempts) {
+				const reason = error instanceof Error ? error.message : String(error);
+				throw new Error(
+					`Could not move the clip to the Recycle Bin: another app may still have it open (${reason}).`,
+				);
+			}
+			await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+		}
+	}
+}
+
 export function registerQuickCaptureIpcHandlers(
 	ipcMain: IpcMain,
 	deps: QuickCaptureDeps,
@@ -495,7 +517,7 @@ export function registerQuickCaptureIpcHandlers(
 		const clip = resolveKnownClip(filePath);
 		if (!clip) return { success: false, error: "This clip is no longer available." };
 		try {
-			await shell.trashItem(clip);
+			await trashWhenReleased(clip);
 			forgetClip(clip);
 			for (const sidecar of Object.values(transcriptPathsFor(clip))) {
 				if (await fileExists(sidecar)) await shell.trashItem(sidecar).catch(() => undefined);
