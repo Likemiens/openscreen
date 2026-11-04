@@ -143,6 +143,7 @@ bool WasapiLoopbackCapture::initializeMicrophone(const std::wstring& deviceId, c
 }
 
 bool WasapiLoopbackCapture::initialize(WasapiCaptureEndpoint endpoint, const std::wstring& deviceId, const std::wstring& deviceName) {
+    endpoint_ = endpoint;
     HRESULT hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator),
         nullptr,
@@ -296,6 +297,12 @@ bool WasapiLoopbackCapture::start(AudioCallback callback) {
     lastDevicePositionEnd_ = 0;
     hasLastDevicePosition_ = false;
 
+    if (endpoint_ == WasapiCaptureEndpoint::SystemLoopback && !startSilentRender()) {
+        // Recording still works; only stretches of silence may go missing from the audio.
+        std::cerr << "WARNING: Could not keep the output device active; silences may be dropped"
+                  << std::endl;
+    }
+
     HRESULT hr = audioClient_->Start();
     if (!succeeded(hr, "IAudioClient::Start")) {
         return false;
@@ -315,6 +322,56 @@ void WasapiLoopbackCapture::stop() {
     if (audioClient_) {
         audioClient_->Stop();
     }
+    if (silenceClient_) {
+        silenceClient_->Stop();
+        silenceClient_.Reset();
+    }
+}
+
+// Loopback capture only receives packets while the output device is rendering. When nothing
+// plays, Windows sends nothing, and since the mixer stamps audio by the samples it receives,
+// every quiet stretch vanished from the recording: the audio came out shorter than the video
+// and sounds jumped earlier ("system audio lags" without a microphone, whose packets never
+// stop). Playing a silent stream on the same endpoint keeps the device rendering and the
+// packets coming, silence included. OBS keeps loopback alive the same way.
+bool WasapiLoopbackCapture::startSilentRender() {
+    if (!device_ || !mixFormat_) {
+        return false;
+    }
+
+    HRESULT hr = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, &silenceClient_);
+    if (!succeeded(hr, "IMMDevice::Activate(IAudioClient, silence)")) {
+        return false;
+    }
+    hr = silenceClient_->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, BufferDurationHns, 0, mixFormat_, nullptr);
+    if (!succeeded(hr, "IAudioClient::Initialize(silence)")) {
+        silenceClient_.Reset();
+        return false;
+    }
+
+    UINT32 bufferFrames = 0;
+    Microsoft::WRL::ComPtr<IAudioRenderClient> renderClient;
+    BYTE* buffer = nullptr;
+    hr = silenceClient_->GetBufferSize(&bufferFrames);
+    if (SUCCEEDED(hr)) {
+        hr = silenceClient_->GetService(IID_PPV_ARGS(&renderClient));
+    }
+    if (SUCCEEDED(hr)) {
+        hr = renderClient->GetBuffer(bufferFrames, &buffer);
+    }
+    if (SUCCEEDED(hr)) {
+        // One buffer of silence is enough: once it has played, the stream keeps running
+        // (rendering silence) until it is stopped.
+        hr = renderClient->ReleaseBuffer(bufferFrames, AUDCLNT_BUFFERFLAGS_SILENT);
+    }
+    if (SUCCEEDED(hr)) {
+        hr = silenceClient_->Start();
+    }
+    if (!succeeded(hr, "silent render stream")) {
+        silenceClient_.Reset();
+        return false;
+    }
+    return true;
 }
 
 const AudioInputFormat& WasapiLoopbackCapture::inputFormat() const {

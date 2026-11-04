@@ -42,11 +42,15 @@ private:
     bool resolveMicrophoneByName(const std::wstring& deviceName);
     void captureLoop();
     bool resolveInputFormat(WAVEFORMATEX* mixFormat);
+    bool startSilentRender();
 
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> deviceEnumerator_;
     Microsoft::WRL::ComPtr<IMMDevice> device_;
     Microsoft::WRL::ComPtr<IAudioClient> audioClient_;
     Microsoft::WRL::ComPtr<IAudioCaptureClient> captureClient_;
+    // Loopback only: a silent stream played on the same endpoint (see startSilentRender).
+    Microsoft::WRL::ComPtr<IAudioClient> silenceClient_;
+    WasapiCaptureEndpoint endpoint_ = WasapiCaptureEndpoint::SystemLoopback;
     WAVEFORMATEX* mixFormat_ = nullptr;
     AudioInputFormat inputFormat_{};
     std::wstring selectedDeviceName_;

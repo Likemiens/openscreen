@@ -1,0 +1,33 @@
+name: Native helpers
+
+# Builds the Windows capture helpers on demand, for working on them without a local Visual
+# Studio toolchain: download the artifact into electron/native/bin/win32-x64/.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows capture helpers
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build helpers
+        run: node scripts/build-windows-wgc-helper.mjs
+
+      - name: Upload helpers
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-capture-helpers
+          path: electron/native/bin/win32-x64/
+          if-no-files-found: error
+          retention-days: 14
