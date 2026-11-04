@@ -49,6 +49,16 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # For working on the helpers without a local Visual Studio: drop these into
+      # electron/native/bin/win32-x64/.
+      - name: Upload Windows capture helpers
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-capture-helpers
+          path: electron/native/bin/win32-x64/
+          if-no-files-found: error
+          retention-days: 14
+
   build-macos:
     name: macOS ${{ matrix.arch }} DMG
     runs-on: macos-latest
