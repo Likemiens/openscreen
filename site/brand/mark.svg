@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 32" width="160" height="128">
+  <title>Marquee</title>
+  <!-- A frame of bulbs (the marquee) around the record light. 18 bulbs, evenly spaced from the top centre. -->
+  <path d="M20 2H31A7 7 0 0 1 38 9V23A7 7 0 0 1 31 30H9A7 7 0 0 1 2 23V9A7 7 0 0 1 9 2Z" fill="none" stroke="#FFE6B8" stroke-width="3.2" stroke-linecap="round" pathLength="18" stroke-dasharray="0 1"/>
+  <circle cx="20" cy="16" r="6" fill="#FF453A"/>
+</svg>

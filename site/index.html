@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<title>Marquee: a free, open source screen recorder</title>
+	<meta name="description" content="Draw a box, hit record, send the clip. Marquee saves an MP4 the moment you stop, and Studio adds zooms, device frames and captions. Free for Windows, macOS and Linux.">
+	<meta name="theme-color" content="#181818">
+	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+	<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+	<link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+	<meta property="og:type" content="website">
+	<meta property="og:title" content="Marquee: draw a box, hit record, send the clip">
+	<meta property="og:description" content="A free, open source screen recorder for quick clips and polished demos. Windows, macOS and Linux.">
+	<meta property="og:image" content="/og.png">
+	<meta property="og:image:width" content="1200">
+	<meta property="og:image:height" content="630">
+	<meta name="twitter:card" content="summary_large_image">
+	<link rel="stylesheet" href="/styles.css">
+	<script src="/main.js" defer></script>
+</head>
+<body>
+	<a class="skip" href="#main">Skip to content</a>
+
+	<header class="nav-wrap">
+		<nav class="nav" aria-label="Main">
+			<a class="brand" href="/" aria-label="Marquee home">
+				<svg class="brand-mark" viewBox="0 0 40 32" aria-hidden="true"><path d="M20 2H31A7 7 0 0 1 38 9V23A7 7 0 0 1 31 30H9A7 7 0 0 1 2 23V9A7 7 0 0 1 9 2Z" pathLength="18"/><circle cx="20" cy="16" r="6"/></svg>
+				<span class="title-2">Marquee</span>
+			</a>
+			<ul class="nav-links">
+				<li><a class="title-4" href="#how" data-spy="how">How it works</a></li>
+				<li><a class="title-4" href="#studio" data-spy="studio">Studio</a></li>
+				<li><a class="title-4" href="#faq" data-spy="faq">FAQ</a></li>
+			</ul>
+			<a class="btn btn-ghost btn-sm button-sm" href="https://github.com/Likemiens/openscreen">
+				<svg class="ico" aria-hidden="true"><use href="/icons.svg#i-github-logo"/></svg>GitHub
+			</a>
+		</nav>
+	</header>
+
+	<main id="main">
+		<!-- Act 0: the hero -->
+		<section class="hero" aria-labelledby="hero-title">
+			<p class="badge caption-4"><span class="rec-light" aria-hidden="true"></span>Now showing · Free and open source</p>
+			<h1 id="hero-title" class="hero-title heading-1">
+				<span class="ph">Draw a <span class="wordbox" data-wordbox>box<span class="wordbox-ui" aria-hidden="true"><svg class="ants"><rect x="0.5" y="0.5" width="100%" height="100%" rx="4"/></svg><i class="h nw"></i><i class="h n"></i><i class="h ne"></i><i class="h e"></i><i class="h se"></i><i class="h s"></i><i class="h sw"></i><i class="h w"></i><span class="wordbox-size" data-wordbox-size>0 × 0</span></span></span>.</span>
+				<span class="ph">Hit record<span class="rec-stop" aria-hidden="true"></span><span class="sr">.</span></span>
+				<span class="ph">Send the clip.</span>
+			</h1>
+			<p class="hero-sub body-3">Marquee records any part of your screen and saves the MP4 the moment you stop. When a clip needs polish, Studio adds zooms, device frames and captions.</p>
+			<div class="hero-cta">
+				<a class="btn btn-rec button-md" href="https://github.com/Likemiens/openscreen/releases/latest">
+					<svg class="ico" aria-hidden="true"><use href="/icons.svg#i-github-logo"/></svg>Download on GitHub
+				</a>
+				<a class="link body-5" href="https://github.com/Likemiens/openscreen">Read the source<svg class="ico" aria-hidden="true"><use href="/icons.svg#i-arrow-right"/></svg></a>
+			</div>
+			<p class="hero-proof caption-5">Windows, macOS and Linux<span aria-hidden="true">·</span>MIT license<span aria-hidden="true">·</span>No account</p>
+
+			<!-- The stage: the real recorder, drawn in HTML, inside a frame of chasing bulbs -->
+			<div class="stage reveal" data-bulbs="stage" role="img" aria-label="Marquee at work: an area of the screen is selected, recorded for a few seconds and saved as a clip, ready to copy as a file or a link.">
+				<div class="stage-screen">
+					<div class="desk" data-desk data-phase="idle" aria-hidden="true">
+						<div class="wall"><i class="glow g1"></i><i class="glow g2"></i><i class="glow g3"></i></div>
+
+						<div class="win">
+							<div class="win-bar"><i></i><i></i><i></i><span>Ledger · Signups</span></div>
+							<div class="win-side">
+								<span class="is-on">Overview</span><span>Signups</span><span>Revenue</span><span>Churn</span><span>Exports</span>
+							</div>
+							<div class="win-main">
+								<div class="kpis">
+									<div><small>New this week</small><b>2,486</b><em class="up">+12.4%</em></div>
+									<div><small>Activation</small><b>61.3%</b><em class="up">+2.1%</em></div>
+									<div><small>Trial to paid</small><b>3.7%</b><em class="down">−0.8%</em></div>
+								</div>
+								<svg class="chart" viewBox="0 0 560 200" preserveAspectRatio="none">
+									<path class="grid" d="M0 40H560M0 90H560M0 140H560M0 190H560"/>
+									<path class="area" d="M0 120 C40 110 60 96 100 98 S160 70 200 74 S260 60 290 66 S330 150 360 148 S410 82 440 76 S500 52 560 44 V200 H0Z"/>
+									<path class="line" d="M0 120 C40 110 60 96 100 98 S160 70 200 74 S260 60 290 66 S330 150 360 148 S410 82 440 76 S500 52 560 44"/>
+									<circle class="dip" cx="356" cy="147" r="5"/>
+								</svg>
+								<div class="tip"><b>Nov 2</b> 312 signups<br><span>Checkout returned 500</span></div>
+							</div>
+						</div>
+
+						<div class="sel" data-sel>
+							<svg class="ants"><rect x="0.5" y="0.5" width="100%" height="100%"/></svg>
+							<i class="h nw"></i><i class="h n"></i><i class="h ne"></i><i class="h e"></i><i class="h se"></i><i class="h s"></i><i class="h sw"></i><i class="h w"></i>
+							<span class="sel-size" data-sel-size>0 × 0</span>
+						</div>
+
+						<div class="picker hud-surface">
+							<span class="pk-seg"><span class="is-on">Free</span><span>16:9</span><span>4:3</span><span>1:1</span><span>9:16</span></span>
+							<span class="hud-div"></span>
+							<span class="pk-btn">720p</span><span class="pk-btn">1080p</span>
+							<span class="hud-div"></span>
+							<span class="pk-btn">Cancel</span><span class="pk-btn">Done</span>
+							<span class="hud-rec" data-target="picker-rec"><i class="dot"></i>Record<span class="hud-kbd">Enter</span></span>
+						</div>
+
+						<div class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>R</kbd></div>
+
+						<div class="hud-stack">
+							<div class="clip hud-surface">
+								<div class="clip-top">
+									<div class="clip-thumb"><svg viewBox="0 0 560 200" preserveAspectRatio="none"><path class="area" d="M0 120 C40 110 60 96 100 98 S160 70 200 74 S260 60 290 66 S330 150 360 148 S410 82 440 76 S500 52 560 44 V200 H0Z"/><path class="line" d="M0 120 C40 110 60 96 100 98 S160 70 200 74 S260 60 290 66 S330 150 360 148 S410 82 440 76 S500 52 560 44"/></svg><span class="clip-dur">0:04</span></div>
+									<div class="clip-info">
+										<b>Recording 2026-11-04 16-12</b>
+										<span>1280 × 720 · 1.8 MB</span>
+										<span class="ok"><svg><use href="/icons.svg#i-check"/></svg>Saved to Videos\Marquee</span>
+									</div>
+									<span class="clip-x"><svg><use href="/icons.svg#i-x"/></svg></span>
+								</div>
+								<div class="clip-actions">
+									<span class="hb" data-target="copy-link"><svg><use href="/icons.svg#i-link"/></svg><span data-copy-label>Copy link</span></span>
+									<span class="hb hb-blue"><svg><use href="/icons.svg#i-copy"/></svg>Copy file</span>
+									<span class="hb hb-icon"><svg><use href="/icons.svg#i-folder-open"/></svg></span>
+									<span class="hb hb-icon"><svg><use href="/icons.svg#i-film-slate"/></svg></span>
+									<span class="hb hb-icon"><svg><use href="/icons.svg#i-trash"/></svg></span>
+								</div>
+							</div>
+
+							<div class="hud-bars">
+								<div class="hud-bar hud-surface hud-idle">
+									<span class="hud-drag"><svg><use href="/icons.svg#i-dots-six-vertical"/></svg></span>
+									<span class="hud-seg">
+										<span class="is-on"><svg><use href="/icons.svg#i-selection"/></svg>Area<span class="hud-detail">1280 × 720</span></span>
+										<span><svg><use href="/icons.svg#i-app-window"/></svg>Window</span>
+										<span><svg><use href="/icons.svg#i-monitor"/></svg>Screen</span>
+									</span>
+									<span class="hud-div"></span>
+									<span class="hud-ctl"><svg><use href="/icons.svg#i-speaker-simple-slash"/></svg></span>
+									<span class="hud-ctl"><svg><use href="/icons.svg#i-microphone-slash"/></svg></span>
+									<span class="hud-ctl is-dim"><svg><use href="/icons.svg#i-video-camera-slash"/></svg></span>
+									<span class="hud-div"></span>
+									<span class="hud-fmt">1080p · 60<svg><use href="/icons.svg#i-caret-down"/></svg></span>
+									<span class="hud-rec"><i class="dot"></i>Record</span>
+									<span class="hud-div"></span>
+									<span class="hud-ctl"><svg><use href="/icons.svg#i-dots-three"/></svg></span>
+									<span class="hud-ctl"><svg><use href="/icons.svg#i-x"/></svg></span>
+								</div>
+								<div class="hud-bar hud-surface hud-live">
+									<span class="hud-drag"><svg><use href="/icons.svg#i-dots-six-vertical"/></svg></span>
+									<span class="hud-live-dot"></span><span class="hud-timer" data-timer>00:00</span>
+									<span class="hud-div"></span>
+									<span class="hud-ctl"><svg><use href="/icons.svg#i-pause"/></svg></span>
+									<span class="hud-ctl"><svg><use href="/icons.svg#i-arrow-counter-clockwise"/></svg></span>
+									<span class="hud-ctl"><svg><use href="/icons.svg#i-trash"/></svg></span>
+									<span class="hud-rec" data-target="stop"><i class="sq"></i>Stop<span class="hud-kbd">Ctrl + Alt + R</span></span>
+								</div>
+							</div>
+						</div>
+
+						<svg class="cursor" data-cursor viewBox="0 0 28 28"><path d="M6 3.5v19.2l4.6-4.3 2.9 6.7 3.4-1.5-2.9-6.6h6.4z"/></svg>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Why -->
+		<section class="intro reveal" id="why" aria-labelledby="why-label">
+			<p class="intro-label title-4" id="why-label">Why Marquee</p>
+			<div class="intro-copy body-3">
+				<p><b>Showing beats explaining.</b> A ten second clip of the bug, the chart or the new button says more than three paragraphs in a chat.</p>
+				<p><b>Marquee keeps that clip one keystroke away.</b> It waits in the tray, starts on a single shortcut and puts every recording in a folder you choose, already named and ready to send.</p>
+			</div>
+		</section>
+
+		<!-- How it works -->
+		<section class="acts" id="how" aria-labelledby="how-title">
+			<header class="section-head reveal">
+				<p class="eyebrow caption-3">How it works</p>
+				<h2 id="how-title" class="heading-2">Three acts. No intermission.</h2>
+			</header>
+			<ol class="act-list">
+				<li class="act reveal">
+					<div class="act-visual act-keys" aria-hidden="true"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>R</kbd></div>
+					<p class="act-no caption-3">Act I</p>
+					<h3 class="heading-6">Press the shortcut</h3>
+					<p class="body-6">One shortcut starts and stops a recording from anywhere. The area picker opens with your last area already drawn, so a repeat take is shortcut, then Enter.</p>
+				</li>
+				<li class="act reveal">
+					<div class="act-visual act-ratios" aria-hidden="true">
+						<span class="pk-seg"><span>Free</span><span class="is-on">16:9</span><span>4:3</span><span>1:1</span><span>9:16</span></span>
+						<span class="act-size">1920 × 1080</span>
+					</div>
+					<p class="act-no caption-3">Act II</p>
+					<h3 class="heading-6">Draw the area</h3>
+					<p class="body-6">Drag out any area, snap it to 16:9, 4:3, 1:1 or 9:16, or pick an exact 720p or 1080p frame. The size is shown in real pixels.</p>
+				</li>
+				<li class="act reveal">
+					<div class="act-visual act-saved" aria-hidden="true">
+						<span class="ok"><svg><use href="/icons.svg#i-check"/></svg>Saved to Videos\Marquee</span>
+						<span class="hb hb-blue"><svg><use href="/icons.svg#i-copy"/></svg>Copy file</span>
+					</div>
+					<p class="act-no caption-3">Act III</p>
+					<h3 class="heading-6">Stop and send</h3>
+					<p class="body-6">A second or two later the MP4 is in your folder. Copy the file straight into a chat, or upload it to Yandex Disk and copy the link.</p>
+				</li>
+			</ol>
+		</section>
+
+		<!-- The marquee ticker, a respectful nod to the tag that shall not be named -->
+		<section class="ticker" aria-label="What Marquee records and exports">
+			<div class="ticker-track">
+				<ul class="ticker-list caption-4">
+					<li>Area</li><li>Window</li><li>Screen</li><li>720p</li><li>1080p</li><li>Original size</li><li>30 or 60 fps</li><li>System audio</li><li>Microphone</li><li>Camera</li><li>Auto zoom</li><li>Cursor effects</li><li>Motion blur</li><li>Captions</li><li>Device frames</li><li>MP4</li><li>GIF</li><li>13 languages</li>
+				</ul>
+				<ul class="ticker-list caption-4" aria-hidden="true">
+					<li>Area</li><li>Window</li><li>Screen</li><li>720p</li><li>1080p</li><li>Original size</li><li>30 or 60 fps</li><li>System audio</li><li>Microphone</li><li>Camera</li><li>Auto zoom</li><li>Cursor effects</li><li>Motion blur</li><li>Captions</li><li>Device frames</li><li>MP4</li><li>GIF</li><li>13 languages</li>
+				</ul>
+			</div>
+		</section>
+
+		<!-- Studio -->
+		<section class="studio" id="studio" aria-labelledby="studio-title">
+			<header class="section-head reveal">
+				<p class="eyebrow caption-3">Studio</p>
+				<h2 id="studio-title" class="heading-2">When it needs polish,<br>open Studio.</h2>
+				<p class="section-sub body-3">Turn the camera on or make the cursor editable, and the recording keeps its tracks for Studio. Frame it, cut it and export it from one window.</p>
+			</header>
+
+			<div class="bento">
+				<article class="card card-wide reveal">
+					<div class="card-text">
+						<h3 class="heading-6">Device frames at real proportions</h3>
+						<p class="body-6">Phone, tablet, laptop or browser window, in graphite, silver, black or white. A device never stretches to fit the video: you scale it, turn it, and choose fill or fit.</p>
+					</div>
+					<figure class="shot">
+						<img src="/assets/studio-frame.webp" width="1440" height="900" loading="lazy" decoding="async" alt="Studio with the Frame tab open: a recording inside a phone mockup on a red background, with device, color and screen settings on the right.">
+					</figure>
+				</article>
+
+				<article class="card reveal">
+					<figure class="shot shot-crop">
+						<img src="/assets/studio-timeline.webp" width="1400" height="260" loading="lazy" decoding="async" alt="The timeline: the video as one clip split into pieces, with the middle piece removed and shown hatched.">
+					</figure>
+					<div class="card-text">
+						<h3 class="heading-6">Cut it like an editor</h3>
+						<p class="body-6">Split with <kbd>T</kbd>, remove with <kbd>Delete</kbd>, and the gap closes. A removed piece stays on the track, so Restore brings it back.</p>
+					</div>
+				</article>
+
+				<article class="card reveal">
+					<div class="captions" aria-hidden="true">
+						<p class="cap-file caption-4">recording.srt</p>
+						<p class="cap-line"><span>00:00:04,120</span>So this is the new export menu.</p>
+						<p class="cap-line"><span>00:00:07,480</span>Pick the format first, then where it goes.</p>
+						<p class="cap-line is-live"><span>00:00:11,050</span>And the link is already copied<i class="caret"></i></p>
+					</div>
+					<div class="card-text">
+						<h3 class="heading-6">Captions written on your computer</h3>
+						<p class="body-6">Whisper turns a 77 second meeting into text in about 14 seconds on a midrange GPU. A transcript and subtitles land next to the video. Nothing is uploaded.</p>
+					</div>
+				</article>
+
+				<article class="card reveal">
+					<div class="zoom-demo" aria-hidden="true">
+						<div class="zoom-frame"><span class="zoom-target"></span></div>
+						<span class="zoom-chip caption-4"><svg><use href="/icons.svg#i-magnifying-glass-plus"/></svg>1.80×</span>
+					</div>
+					<div class="card-text">
+						<h3 class="heading-6">Zooms that follow the cursor</h3>
+						<p class="body-6">Auto zoom tracks where you work. Depth, duration, easing and position stay yours to tune, down to the pixel.</p>
+					</div>
+				</article>
+
+				<article class="card reveal">
+					<div class="export-demo" aria-hidden="true">
+						<span class="pk-seg"><span class="is-on">MP4</span><span>GIF</span></span>
+						<span class="pk-seg"><span>720p</span><span class="is-on">1080p</span><span>Source</span></span>
+						<span class="hb hb-blue"><svg><use href="/icons.svg#i-export"/></svg>Save to computer</span>
+					</div>
+					<div class="card-text">
+						<h3 class="heading-6">Export once, share anywhere</h3>
+						<p class="body-6">MP4 at 720p, 1080p or the source size, or a GIF. Save it anywhere, or publish to Yandex Disk and copy the link.</p>
+					</div>
+				</article>
+			</div>
+		</section>
+
+		<!-- Tagline reveal: words light up one at a time -->
+		<section class="tagline" aria-labelledby="tagline-label">
+			<p class="eyebrow caption-3" id="tagline-label">The fine print, in large type</p>
+			<p class="tagline-text heading-2" data-tagline>Every clip lands in a folder you own. Nothing leaves your computer unless you ask, and nothing is locked behind a paywall.</p>
+		</section>
+
+		<!-- Free -->
+		<section class="free" id="free" aria-labelledby="free-title">
+			<header class="section-head reveal">
+				<p class="eyebrow caption-3">Free, for real</p>
+				<h2 id="free-title" class="heading-2">Not a trial. Not a tier.</h2>
+				<p class="section-sub body-3">Marquee has no paid plan, no watermark and no sign in. It is MIT licensed, so you can use it at work, change it and ship your own build.</p>
+			</header>
+			<ul class="facts">
+				<li class="fact reveal"><b class="fact-n">0</b><span class="body-6">accounts to create before your first recording</span></li>
+				<li class="fact reveal"><b class="fact-n">0</b><span class="body-6">watermarks, upsells or locked features</span></li>
+				<li class="fact reveal"><b class="fact-n">MIT</b><span class="body-6">license, for personal and commercial use</span></li>
+			</ul>
+			<p class="credits body-6 reveal">Marquee is a fork of <a class="link" href="https://github.com/siddharthvaddem/openscreen">OpenScreen</a>, created by Siddharth Vaddem and carried on by its contributors.</p>
+		</section>
+
+		<!-- FAQ -->
+		<section class="faq" id="faq" aria-labelledby="faq-title">
+			<header class="section-head reveal">
+				<p class="eyebrow caption-3">FAQ</p>
+				<h2 id="faq-title" class="heading-2">Questions from the front row</h2>
+			</header>
+			<div class="faq-list reveal">
+				<details>
+					<summary class="title-3">Is Marquee really free?</summary>
+					<p class="body-6">Yes. There is no paid plan and nothing is locked. The MIT license allows personal and commercial use, changes and redistribution.</p>
+				</details>
+				<details>
+					<summary class="title-3">Which systems does it run on?</summary>
+					<p class="body-6">Windows, macOS (Apple Silicon and Intel) and Linux, as a .deb, a .pacman package or an AppImage. Every installer is on the <a class="link" href="https://github.com/Likemiens/openscreen/releases/latest">releases page</a>.</p>
+				</details>
+				<details>
+					<summary class="title-3">Why does my computer warn me on the first launch?</summary>
+					<p class="body-6">The installers are not code signed yet. On Windows, choose More info, then Run anyway. On macOS, the <a class="link" href="https://github.com/Likemiens/openscreen#macos">install notes</a> have a one line command that clears the quarantine flag.</p>
+				</details>
+				<details>
+					<summary class="title-3">Why does the installer say OpenScreen?</summary>
+					<p class="body-6">Marquee is the new name of OpenScreen Creator Edition. The releases on GitHub still carry the old name for now.</p>
+				</details>
+				<details>
+					<summary class="title-3">Does it upload my recordings?</summary>
+					<p class="body-6">No. Every clip is saved to your own folder. A link is made only when you press Copy link, which uploads that one file to your Yandex Disk. Sharing never deletes the clip from your folder.</p>
+				</details>
+				<details>
+					<summary class="title-3">Can it record my camera and my voice?</summary>
+					<p class="body-6">Yes. Microphone and system audio are toggles on the recorder, and window or screen recordings can include the camera as picture in picture. Area clips always include the cursor and leave the camera out.</p>
+				</details>
+				<details>
+					<summary class="title-3">How do captions work without the cloud?</summary>
+					<p class="body-6">Whisper runs on your computer. The speech model downloads once, the first time you transcribe (about 560 MB for the GPU model, 250 MB for the processor one), and works offline after that.</p>
+				</details>
+				<details>
+					<summary class="title-3">Can I edit a video I did not record with Marquee?</summary>
+					<p class="body-6">Yes. Studio opens MP4, MOV, WebM, MKV and AVI files, from the title bar, by dropping a file onto the editor, or from the recorder menu.</p>
+				</details>
+				<details>
+					<summary class="title-3">Is it stable?</summary>
+					<p class="body-6">It is young software, so expect rough edges. If something breaks, an <a class="link" href="https://github.com/Likemiens/openscreen/issues">issue on GitHub</a> helps the most.</p>
+				</details>
+			</div>
+		</section>
+
+		<!-- Finale: the sign -->
+		<section class="finale" id="download" aria-labelledby="finale-title">
+			<div class="sign" data-bulbs="sign" data-sign aria-hidden="true"></div>
+			<h2 id="finale-title" class="heading-3">Now showing on GitHub</h2>
+			<p class="body-3 finale-sub">Free for Windows, macOS and Linux.</p>
+			<div class="hero-cta">
+				<a class="btn btn-rec button-md" href="https://github.com/Likemiens/openscreen/releases/latest">
+					<svg class="ico" aria-hidden="true"><use href="/icons.svg#i-github-logo"/></svg>Download on GitHub
+				</a>
+				<a class="link body-5" href="https://github.com/Likemiens/openscreen">or star the repository<svg class="ico" aria-hidden="true"><use href="/icons.svg#i-arrow-right"/></svg></a>
+			</div>
+		</section>
+	</main>
+
+	<footer class="footer">
+		<div class="footer-top">
+			<div class="footer-brand">
+				<a class="brand" href="/" aria-label="Marquee home">
+					<svg class="brand-mark" viewBox="0 0 40 32" aria-hidden="true"><path d="M20 2H31A7 7 0 0 1 38 9V23A7 7 0 0 1 31 30H9A7 7 0 0 1 2 23V9A7 7 0 0 1 9 2Z" pathLength="18"/><circle cx="20" cy="16" r="6"/></svg>
+					<span class="title-2">Marquee</span>
+				</a>
+				<p class="body-6">A free, open source screen recorder for quick clips and polished demos.</p>
+			</div>
+			<nav class="footer-cols" aria-label="Footer">
+				<div>
+					<p class="caption-4">Product</p>
+					<ul class="body-6">
+						<li><a href="https://github.com/Likemiens/openscreen/releases/latest">Download</a></li>
+						<li><a href="https://github.com/Likemiens/openscreen/releases">All releases</a></li>
+						<li><a href="#how">How it works</a></li>
+						<li><a href="#studio">Studio</a></li>
+					</ul>
+				</div>
+				<div>
+					<p class="caption-4">Project</p>
+					<ul class="body-6">
+						<li><a href="https://github.com/Likemiens/openscreen">Source code</a></li>
+						<li><a href="https://github.com/Likemiens/openscreen/issues">Issues</a></li>
+						<li><a href="https://github.com/Likemiens/openscreen/blob/creator-edition/CONTRIBUTING.md">Contributing</a></li>
+						<li><a href="/brand/">Brand assets</a></li>
+					</ul>
+				</div>
+				<div>
+					<p class="caption-4">Legal</p>
+					<ul class="body-6">
+						<li><a href="https://github.com/Likemiens/openscreen/blob/creator-edition/LICENSE">MIT license</a></li>
+						<li><a href="#privacy">Privacy</a></li>
+						<li><a href="https://github.com/siddharthvaddem/openscreen">Original OpenScreen</a></li>
+					</ul>
+				</div>
+			</nav>
+		</div>
+		<div class="footer-bottom caption-5">
+			<p>© 2026 Likemiens. Released under the MIT license.</p>
+			<p id="privacy">This page sets no cookies and runs no analytics.</p>
+		</div>
+	</footer>
+</body>
+</html>
