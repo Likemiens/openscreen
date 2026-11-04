@@ -52,6 +52,7 @@ import {
 	getKeptDurationMs,
 	isSameClipPiece,
 } from "./clipPieces";
+import type { CutMark } from "./cutTime";
 import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
 import Row from "./Row";
@@ -75,7 +76,7 @@ const TOOLBAR_TEXT_BUTTON =
 	"flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-white/80 transition-colors hover:bg-white/[0.08] hover:text-white disabled:pointer-events-none disabled:opacity-35";
 const TARGET_MARKER_COUNT = 12;
 
-interface TimelineEditorProps {
+export interface TimelineEditorProps {
 	videoDuration: number;
 	hasVideoSource?: boolean;
 	currentTime: number;
@@ -144,6 +145,16 @@ interface TimelineEditorProps {
 	isGeneratingCaptions?: boolean;
 	/** Localized label for the auto-captions button (lives in the `editor` namespace). */
 	captionsLabel?: string;
+	/**
+	 * Set when the timeline shows the video with its removed parts closed up (see
+	 * CutTimelineEditor): the recording's own length, and how a point of the timeline maps to
+	 * the recording, for drawing its frames and sound.
+	 */
+	sourceDurationMs?: number;
+	cutToSourceMs?: (cutMs: number, side?: "start" | "end") => number;
+	/** Where removed parts were cut out; each can be put back. */
+	cutMarks?: CutMark[];
+	onRestoreCut?: (mark: CutMark) => void;
 }
 
 interface TimelineScaleConfig {
@@ -662,6 +673,10 @@ function Timeline({
 	onSelectClipPieceAt,
 	onRestoreTrim,
 	filmstrip,
+	sourceDurationMs,
+	cutToSourceMs,
+	cutMarks,
+	onRestoreCut,
 }: {
 	items: TimelineRenderItem[];
 	videoDurationMs: number;
@@ -690,6 +705,10 @@ function Timeline({
 	onSelectClipPieceAt?: (timeMs: number | null) => void;
 	onRestoreTrim?: (id: string) => void;
 	filmstrip: FilmstripFrames;
+	sourceDurationMs?: number;
+	cutToSourceMs?: (cutMs: number, side?: "start" | "end") => number;
+	cutMarks?: CutMark[];
+	onRestoreCut?: (mark: CutMark) => void;
 }) {
 	const t = useScopedT("timeline");
 	const { setTimelineRef, style, sidebarWidth, range, pixelsToValue } = useTimelineContext();
@@ -901,11 +920,17 @@ function Timeline({
 							videoDurationMs={videoDurationMs}
 							selectedPiece={selectedClipPiece}
 							filmstrip={filmstrip}
+							sourceDurationMs={sourceDurationMs}
+							toSourceMs={cutToSourceMs}
+							cutMarks={cutMarks}
+							onRestoreCut={onRestoreCut}
 						/>
 						{showTrimWaveform && (
 							<BackgroundWaveform
 								peaks={peaks}
 								videoDurationMs={videoDurationMs}
+								sourceDurationMs={sourceDurationMs}
+								toSourceMs={cutToSourceMs}
 								topInset={CLIP_ROW_HEIGHT * 0.45}
 								bottomInset={5}
 							/>
@@ -1084,6 +1109,10 @@ export default function TimelineEditor({
 	onGenerateCaptions,
 	isGeneratingCaptions = false,
 	captionsLabel,
+	sourceDurationMs,
+	cutToSourceMs,
+	cutMarks,
+	onRestoreCut,
 }: TimelineEditorProps) {
 	const t = useScopedT("timeline");
 	const totalMs = useMemo(() => Math.max(0, Math.round(videoDuration * 1000)), [videoDuration]);
@@ -1551,6 +1580,17 @@ export default function TimelineEditor({
 				return;
 			}
 
+			// Ctrl+B (Cmd+B) splits the clip, as in other editors, besides the split shortcut.
+			if (
+				(isMac ? e.metaKey : e.ctrlKey) &&
+				!e.shiftKey &&
+				!e.altKey &&
+				e.key.toLowerCase() === "b"
+			) {
+				e.preventDefault();
+				handleSplitClip();
+				return;
+			}
 			if (matchesShortcut(e, keyShortcuts.addKeyframe, isMac)) {
 				addKeyframe();
 			}
@@ -2066,6 +2106,10 @@ export default function TimelineEditor({
 						onSelectClipPieceAt={handleSelectClipPieceAt}
 						onRestoreTrim={restoreTrim}
 						filmstrip={filmstrip}
+						sourceDurationMs={sourceDurationMs}
+						cutToSourceMs={cutToSourceMs}
+						cutMarks={cutMarks}
+						onRestoreCut={onRestoreCut}
 					/>
 				</TimelineWrapper>
 			</div>

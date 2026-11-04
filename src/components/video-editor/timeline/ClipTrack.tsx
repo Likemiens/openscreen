@@ -1,7 +1,9 @@
 import { useTimelineContext } from "dnd-timeline";
+import { Scissors } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { type ClipPiece, isSameClipPiece } from "./clipPieces";
+import type { CutMark } from "./cutTime";
 import type { FilmstripFrames } from "./useFilmstripFrames";
 
 /** Space above and below the clip inside its row. */
@@ -12,6 +14,14 @@ interface ClipTrackProps {
 	videoDurationMs: number;
 	selectedPiece: Pick<ClipPiece, "start" | "end"> | null;
 	filmstrip: FilmstripFrames;
+	/**
+	 * With removed parts closed up, the timeline is shorter than the recording: its frames
+	 * are drawn piece by piece from where each piece is in the recording.
+	 */
+	sourceDurationMs?: number;
+	toSourceMs?: (cutMs: number, side?: "start" | "end") => number;
+	cutMarks?: readonly CutMark[];
+	onRestoreCut?: (mark: CutMark) => void;
 }
 
 /**
@@ -25,6 +35,10 @@ export default function ClipTrack({
 	videoDurationMs,
 	selectedPiece,
 	filmstrip,
+	sourceDurationMs = videoDurationMs,
+	toSourceMs,
+	cutMarks = [],
+	onRestoreCut,
 }: ClipTrackProps) {
 	const { range } = useTimelineContext();
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -56,41 +70,74 @@ export default function ClipTrack({
 		context.clearRect(0, 0, size.width, size.height);
 
 		const { frames, aspect } = filmstrip;
-		if (frames.length === 0 || aspect <= 0 || visibleMs <= 0 || videoDurationMs <= 0) return;
+		if (frames.length === 0 || aspect <= 0 || visibleMs <= 0 || sourceDurationMs <= 0) return;
 
 		const top = INSET_Y;
 		const frameHeight = size.height - INSET_Y * 2;
 		const frameWidth = frameHeight * aspect;
 		if (frameHeight <= 0 || frameWidth <= 0) return;
-		const sliceMs = videoDurationMs / frames.length;
+		const sliceMs = sourceDurationMs / frames.length;
 		const toX = (timeMs: number) => ((timeMs - range.start) / visibleMs) * size.width;
 
-		frames.forEach((frame, index) => {
-			if (!frame) return;
-			const left = Math.max(0, toX(index * sliceMs));
-			const right = Math.min(size.width, toX((index + 1) * sliceMs));
-			if (right <= left) return;
-			context.save();
-			context.beginPath();
-			context.rect(left, top, right - left, frameHeight);
-			context.clip();
-			// Tiles are laid from the slice's own start, so they do not slide when panning.
-			const sliceStart = toX(index * sliceMs);
-			const firstTile = Math.floor((left - sliceStart) / frameWidth);
-			try {
-				for (let x = sliceStart + firstTile * frameWidth; x < right; x += frameWidth) {
-					context.drawImage(frame, x, top, frameWidth, frameHeight);
+		// Each stretch of the timeline shows the frames of the recording it plays: the whole
+		// video, or with removed parts closed up, each piece from where it is in the recording
+		// (`offset` is how far its recording time is ahead of its timeline time).
+		const stretches = toSourceMs
+			? pieces
+					.filter((piece) => !piece.trimId)
+					.map((piece) => ({
+						start: piece.start,
+						end: piece.end,
+						offset: toSourceMs(piece.start, "start") - piece.start,
+					}))
+			: [{ start: 0, end: videoDurationMs, offset: 0 }];
+
+		for (const stretch of stretches) {
+			const stretchLeft = Math.max(0, toX(stretch.start));
+			const stretchRight = Math.min(size.width, toX(stretch.end));
+			if (stretchRight <= stretchLeft) continue;
+			const firstFrame = Math.max(0, Math.floor((stretch.start + stretch.offset) / sliceMs));
+			const lastFrame = Math.min(
+				frames.length - 1,
+				Math.floor((stretch.end + stretch.offset) / sliceMs),
+			);
+			for (let index = firstFrame; index <= lastFrame; index += 1) {
+				const frame = frames[index];
+				if (!frame) continue;
+				const sliceStart = toX(index * sliceMs - stretch.offset);
+				const left = Math.max(stretchLeft, sliceStart);
+				const right = Math.min(stretchRight, toX((index + 1) * sliceMs - stretch.offset));
+				if (right <= left) continue;
+				context.save();
+				context.beginPath();
+				context.rect(left, top, right - left, frameHeight);
+				context.clip();
+				// Tiles are laid from the slice's own start, so they do not slide when panning.
+				const firstTile = Math.floor((left - sliceStart) / frameWidth);
+				try {
+					for (let x = sliceStart + firstTile * frameWidth; x < right; x += frameWidth) {
+						context.drawImage(frame, x, top, frameWidth, frameHeight);
+					}
+				} catch {
+					// A frame released while the video was being swapped: leave its slice plain.
 				}
-			} catch {
-				// A frame released while the video was being swapped: leave its slice plain.
+				context.restore();
 			}
-			context.restore();
-		});
+		}
 
 		// Toned down so the labels and the playhead stay readable on top of the picture.
 		context.fillStyle = "rgba(20, 20, 22, 0.38)";
 		context.fillRect(0, top, size.width, frameHeight);
-	}, [filmstrip, range.start, visibleMs, size, videoDurationMs]);
+	}, [
+		filmstrip,
+		range.start,
+		visibleMs,
+		size,
+		videoDurationMs,
+		sourceDurationMs,
+		toSourceMs,
+		pieces,
+	]);
 
 	const hasPictures = filmstrip.frames.some(Boolean);
 
@@ -122,6 +169,37 @@ export default function ClipTrack({
 								width: `calc(${((piece.end - piece.start) / visibleMs) * 100}% - 2px)`,
 							}}
 						/>
+					);
+				})}
+			{visibleMs > 0 &&
+				onRestoreCut &&
+				cutMarks.map((mark) => {
+					if (mark.atMs < range.start || mark.atMs > range.end) return null;
+					const left = `${((mark.atMs - range.start) / visibleMs) * 100}%`;
+					return (
+						<div key={mark.id}>
+							<span
+								className="absolute top-0 bottom-0 z-[3] w-[2px] -translate-x-1/2 rounded-full bg-[#FF9F0A]/75"
+								style={{ left }}
+							/>
+							{/* Beside the line, not on it: right after a cut the playhead sits on the line. */}
+							<button
+								type="button"
+								data-testid="clip-cut-mark"
+								title="A part was removed here. Click to put it back."
+								aria-label="Put the removed part back"
+								className="pointer-events-auto absolute top-1 z-[5] ml-[3px] flex h-4 w-4 items-center justify-center rounded-full bg-[#FF9F0A] text-black shadow-[0_1px_3px_rgba(0,0,0,0.5)] transition-transform hover:scale-110"
+								style={{ left }}
+								// The press is the mark's own: no seeking or picking a piece under it.
+								onPointerDown={(event) => event.stopPropagation()}
+								onClick={(event) => {
+									event.stopPropagation();
+									onRestoreCut(mark);
+								}}
+							>
+								<Scissors size={9} strokeWidth={2.4} aria-hidden="true" />
+							</button>
+						</div>
 					);
 				})}
 		</div>

@@ -113,8 +113,8 @@ import {
 } from "./regionClipboard";
 import { findFreeGapAt } from "./regionPlacement";
 import { SettingsPanel } from "./SettingsPanel";
+import CutTimelineEditor, { useCutTime } from "./timeline/CutTimelineEditor";
 import { removeClipSpan } from "./timeline/clipPieces";
-import TimelineEditor from "./timeline/TimelineEditor";
 import { buildAutoZoomSuggestions } from "./timeline/zoomSuggestionUtils";
 import {
 	type AnnotationRegion,
@@ -378,6 +378,7 @@ export default function VideoEditor() {
 	const [isAutoCaptioning, setIsAutoCaptioning] = useState(false);
 	const [showAutoCaptionsDialog, setShowAutoCaptionsDialog] = useState(false);
 	const speechAvailable = useSpeechRecognitionAvailable();
+	const cutTime = useCutTime(duration, trimRegions);
 	const [captionWordsMin, setCaptionWordsMin] = useState(2);
 	const [captionWordsMax, setCaptionWordsMax] = useState(7);
 	const exporterRef = useRef<VideoExporter | null>(null);
@@ -3345,14 +3346,15 @@ export default function VideoEditor() {
 										{/* Playback controls */}
 										<div className="w-full flex justify-center items-center h-14 flex-shrink-0 px-4 py-2">
 											<div className="w-full max-w-[760px]">
+												{/* The video as edited: removed parts take no time, as on the timeline. */}
 												<PlaybackControls
 													isPlaying={isPlaying}
-													currentTime={currentTime}
-													duration={duration}
+													currentTime={cutTime.toCutSeconds(currentTime)}
+													duration={cutTime.durationSeconds}
 													isFullscreen={isFullscreen}
 													onToggleFullscreen={toggleFullscreen}
 													onTogglePlayPause={togglePlayPause}
-													onSeek={handleSeek}
+													onSeek={(time) => handleSeek(cutTime.toSourceSeconds(time))}
 												/>
 											</div>
 										</div>
@@ -3503,7 +3505,7 @@ export default function VideoEditor() {
 						{/* Full-width timeline */}
 						<Panel defaultSize={33} maxSize={54} minSize={24} className="min-h-[210px]">
 							<div className="editor-timeline-panel h-full overflow-hidden flex flex-col">
-								<TimelineEditor
+								<CutTimelineEditor
 									videoDuration={duration}
 									currentTime={currentTime}
 									getPlaybackTimeMs={getPlaybackTimeMs}

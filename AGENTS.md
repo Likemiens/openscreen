@@ -20,6 +20,7 @@ OpenScreen is a free, open-source screen recorder and video editor (Electron + R
 - `src/` — React app: UI, editor components, timeline, i18n, captioning/cursor/exporter libs
 - `src/lib/deviceFrame.ts` — device mockup geometry and fixed screen proportions, shared by the preview (`videoPlayback/layoutUtils.ts`) and the exporter (`exporter/frameRenderer.ts`); change the frame there, never in one renderer only
 - `src/components/video-editor/timeline/clipPieces.ts` + `ClipTrack.tsx` — the clip row: the video as pieces; a removed piece is a `TrimRegion`, split points are `clipSplits` in editor state
+- `src/components/video-editor/timeline/CutTimelineEditor.tsx` + `cutTime.ts` — the timeline (and the player's time) show the video as edited: a removed part takes no room and what follows moves up. Editor state stays in the recording's own time; the wrapper maps every span, the playhead and seeks both ways
 - `src/components/video-editor/studioControls.tsx` — the Studio inspector's building blocks (section, segmented, slider row, select, number field, toggle); `FramePanel.tsx` is the reference use
 - `src/lib/captioning/` — transcription (Whisper via transformers.js in a worker) and the `.txt`/`.srt` writers; the models are not bundled: `electron/ipc/speechModels.ts` downloads them on first use into `<userData>/speech-models` and serves them, and the ONNX runtime, over `openscreen-asr://` (decision D-025). In a headless check, copy a filled `speech-models` folder into the temp profile to skip the download
 - Packaging ships no `node_modules` (`"!node_modules"` in `electron-builder.json5`): main and preload are bundled by Vite. A dependency the main process must load from `node_modules` at runtime (a native module) has to be added back to `files`
@@ -58,7 +59,8 @@ For editor-only changes you do not need the desktop: `HEADLESS=true` keeps every
 - A hidden window only paints when asked: take two or three throwaway `page.screenshot()` calls before the one you keep, or the WebGL preview may be a frame behind.
 - Quit with `app.exit(0)`; `app.quit()` is vetoed by the unsaved-changes prompt and leaves the single-instance lock held.
 - Studio's export lives in the title-bar **Export** menu (`ExportMenu.tsx`): `testId-export-panel-button` opens it, `testId-mp4-format-button` / `testId-gif-format-button` pick the format, `testId-export-button` is **Save to computer…**, `studio-export-publish` / `studio-export-connect-yandex` are the Yandex Disk actions. Stub `get-yandex-disk-settings` and `upload-recording-to-yandex-disk` to exercise Publish without an account.
-- The timeline lays itself out against the video's duration, which a WebM reports late: wait for the duration label before clicking positions on the clip row (`[data-timeline-row="clip"]`, pieces are `clip-piece`, actions `clip-split-button` / `clip-remove-button` / `clip-restore-button`).
+- The timeline lays itself out against the video's duration, which a WebM reports late: wait for the duration label before clicking positions on the clip row (`[data-timeline-row="clip"]`, pieces are `clip-piece`, actions `clip-split-button` / `clip-remove-button`, and `clip-cut-mark` where a removed part was, which puts it back).
+- A hidden window gets no keyboard input: dispatch a `keydown` on `window` from `page.evaluate`, after a throwaway `page.screenshot()` so state that waits for a frame (the playhead after a seek) has caught up.
 - The editor always has two Pixi applications alive during an export (preview + export renderer). Destroy a Pixi app only through `destroyPixiApp` (`src/lib/pixiDestroy.ts`); `app.destroy(true)` releases Pixi's global pools and kills the other one.
 
 ## Desktop E2E testing with computer-use
@@ -126,6 +128,7 @@ Both workflows require the `OPENSCREEN_RELEASE_TOKEN` secret (a fine-grained PAT
 ## Specialized notes
 
 - **Native capture is platform-fragile**: macOS uses ScreenCaptureKit (Swift), Windows uses WGC (C++/Win32). CI runs on Linux only — manual smoke test on real macOS/Windows is required for native changes.
+- **Windows helper without Visual Studio**: run Actions → *Build Electron App* on your branch (no release tag) and download the `windows-capture-helpers` artifact into `electron/native/bin/win32-x64/`. Run the helper directly with a JSON config as its argument and `stop` on stdin to check it in isolation.
 - **Pixi.js v8** is the rendering engine. Filters come from `pixi-filters` and `@pixi/filter-drop-shadow`. GSAP + `motion` for animation.
 - **i18n**: 13 locales in `src/i18n/locales/<locale>/` (e.g. `src/i18n/locales/en/settings.json`). The `i18n:check` script validates them — run it after touching translation files.
 - **Build pipeline**: `npm run build` is full electron-builder. For iterating on renderer only, use `npm run build-vite` (Vite + tsc, no packaging).

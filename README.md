@@ -69,7 +69,7 @@ The default [`creator-edition`](https://github.com/Likemiens/openscreen/tree/cre
 - **Area, window or screen capture.** The area picker supports free, 16:9, 4:3, 1:1 and 9:16 selections, exact 720p and 1080p sizes, moving, resizing and keyboard nudging. It shows the size in real pixels, and the selection is outlined while it records (the outline never ends up in the video).
 - **Quality is chosen before you record.** 720p, 1080p or Original, at 30 or 60 fps, with an estimate of megabytes per minute. The recording is made at that frame rate, and the setting is remembered.
 - **Long recordings are kept as recorded.** A recording of five minutes or more (a meeting, a lecture) is not re-encoded: the original file is moved into your folder the moment you stop, whatever the quality setting says. While recording, **Restart** and **Delete** ask for a second click once the take is longer than a few seconds, and a discarded take goes to the Recycle Bin.
-- **Saved the moment you stop.** A clip that needs no crop or resize is saved as recorded, without re-encoding. Anything else gets a single hardware crop/scale pass that takes a second or two for a short clip, instead of a full render in the editor. Bitrates are tuned for screen content, so files are small enough to send.
+- **Saved the moment you stop.** On Windows the area is cropped and scaled to the chosen quality on the GPU while it records, so Stop only moves the finished file into your folder, however long the clip. On macOS and Linux a clip that needs a crop or resize gets a single hardware pass after Stop. Bitrates are tuned for screen content, so files are small enough to send.
 - **One hotkey from anywhere.** OpenScreen stays in the tray after you close the recorder. The hotkey starts a capture and stops the one in progress. It defaults to <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> where that is free; Windows 11 reserves it for the Snipping Tool, so on most PCs it becomes <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>. Change it under **⋯ → Record shortcut**.
 - **Light when idle.** A hidden recorder gives its window back after a minute; only the tray icon and the hotkey remain, and the recorder is rebuilt with your last setup when you need it. Optional **Launch at login** starts straight into the tray.
 - **Two ways out of the app, both kept.** Every clip is saved to your own folder (default `Videos\OpenScreen`, changeable). **Copy link** uploads that same file to Yandex Disk, verifies it, publishes a file-specific link and copies it. Sharing never deletes a clip from your folder.
@@ -145,7 +145,7 @@ Creator Edition also includes:
 - Motion blur.
 - Crop (visually or by exact source pixels), trim, and per-segment speed control on the timeline.
 - Device mockups at real proportions — phone, tablet, laptop, browser window — and one-click aspect ratios.
-- A clip track you can split into pieces and cut parts out of.
+- A clip track you can split into pieces (Ctrl+B) and cut parts out of (Delete): the gap closes as in other editors, and a mark where the part was puts it back.
 - Open any video file in the editor, not only OpenScreen recordings.
 - Text, arrow, and image annotations, with text animation presets.
 - Timeline snapping guides and an audio waveform to make trimming easier.

@@ -13,6 +13,9 @@ export interface BackgroundWaveformProps {
 	topInset?: number;
 	/** Inset from canvas bottom so the waveform aligns with item content bottom. Defaults to 0. */
 	bottomInset?: number;
+	/** With removed parts closed up: the recording's length and where a timeline point is in it. */
+	sourceDurationMs?: number;
+	toSourceMs?: (cutMs: number, side?: "start" | "end") => number;
 }
 
 /**
@@ -29,6 +32,8 @@ export default function BackgroundWaveform({
 	videoDurationMs,
 	topInset = 0,
 	bottomInset = 0,
+	sourceDurationMs = videoDurationMs,
+	toSourceMs,
 }: BackgroundWaveformProps) {
 	const { range } = useTimelineContext();
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,7 +84,7 @@ export default function BackgroundWaveform({
 		const W = canvasSize.w;
 		const H = canvasSize.h;
 		const rangeMs = range.end - range.start;
-		if (rangeMs <= 0 || videoDurationMs <= 0) return;
+		if (rangeMs <= 0 || sourceDurationMs <= 0) return;
 
 		// Draw within [topY, bottomY] so the waveform aligns with item bounds
 		// regardless of sub-pixel rounding on the canvas element.
@@ -95,10 +100,12 @@ export default function BackgroundWaveform({
 		// and gamma-curved, drawn upward from bottomY.
 		const colY = new Float32Array(W);
 		for (let x = 0; x < W; x++) {
-			const startMs = range.start + (x / W) * rangeMs;
-			const endMs = range.start + ((x + 1) / W) * rangeMs;
-			const lo = Math.max(0, Math.floor((startMs / videoDurationMs) * N));
-			const hi = Math.min(N - 1, Math.ceil((endMs / videoDurationMs) * N));
+			const cutStartMs = range.start + (x / W) * rangeMs;
+			const cutEndMs = range.start + ((x + 1) / W) * rangeMs;
+			const startMs = toSourceMs ? toSourceMs(cutStartMs, "start") : cutStartMs;
+			const endMs = toSourceMs ? Math.max(startMs, toSourceMs(cutEndMs, "end")) : cutEndMs;
+			const lo = Math.max(0, Math.floor((startMs / sourceDurationMs) * N));
+			const hi = Math.min(N - 1, Math.ceil((endMs / sourceDurationMs) * N));
 
 			let absMax = 0;
 			for (let i = lo; i <= hi; i++) {
@@ -132,7 +139,7 @@ export default function BackgroundWaveform({
 		ctx.strokeStyle = "rgba(255, 255, 255, 0.62)";
 		ctx.lineWidth = 1;
 		ctx.stroke();
-	}, [peaks, normFactor, range, canvasSize, videoDurationMs, topInset, bottomInset]);
+	}, [peaks, normFactor, range, canvasSize, sourceDurationMs, toSourceMs, topInset, bottomInset]);
 
 	return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none w-full h-full" />;
 }

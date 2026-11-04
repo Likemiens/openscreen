@@ -242,7 +242,7 @@ test.describe("Studio frame", () => {
 		expect(studio.pageErrors).toEqual([]);
 	});
 
-	test("splits the clip, removes the middle part and exports a shorter video", async () => {
+	test("splits the clip, removes the middle part, closes the gap and exports a shorter video", async () => {
 		const { editor } = studio;
 		const clipRow = editor.locator('[data-timeline-row="clip"]');
 		await expect(editor.getByTestId("clip-track")).toBeVisible();
@@ -257,22 +257,36 @@ test.describe("Studio frame", () => {
 		// A press on the clip moves the playhead there (and picks the piece under it).
 		const pressAt = (fraction: number) =>
 			editor.mouse.click(box.x + box.width * fraction, box.y + box.height / 2);
+		// A hidden window gets no keyboard focus, so key presses go straight to the page.
+		const pressKey = (key: string, ctrlKey = false) =>
+			editor.evaluate(
+				([k, ctrl]) =>
+					window.dispatchEvent(new KeyboardEvent("keydown", { key: k, ctrlKey: ctrl })),
+				[key, ctrlKey] as const,
+			);
 
 		await pressAt(0.3);
 		await editor.getByTestId("clip-split-button").click();
 		await pressAt(0.7);
-		await editor.getByTestId("clip-split-button").click();
+		// Ctrl+B splits too, as in other editors. A hidden window only updates the playhead
+		// when it paints: ask for a frame first.
+		await editor.screenshot();
+		await editor.screenshot();
+		await pressKey("b", true);
 		await expect(editor.getByTestId("clip-piece")).toHaveCount(3);
 
 		await pressAt(0.5);
 		await expect(editor.locator('[data-testid="clip-piece"][data-selected="true"]')).toHaveCount(1);
-		await editor.getByTestId("clip-remove-button").click();
-		await expect(editor.getByTestId("clip-piece")).toHaveCount(2);
-		await expect(editor.getByTestId("clip-kept-duration")).toHaveText("1.2s after cuts");
+		await editor.screenshot();
+		await pressKey("Delete");
 
-		// The removed part stays on the track, hatched, and can be put back.
-		await pressAt(0.45);
-		await expect(editor.getByTestId("clip-restore-button")).toBeVisible();
+		// The removed part takes no room: the pieces either side meet, and a mark shows the cut.
+		await expect(editor.getByTestId("clip-piece")).toHaveCount(2);
+		await expect(editor.getByTestId("clip-cut-mark")).toHaveCount(1);
+		const edges = await editor
+			.getByTestId("clip-piece")
+			.evaluateAll((pieces) => pieces.map((piece) => piece.getBoundingClientRect()));
+		expect(Math.abs(edges[1].left - edges[0].right)).toBeLessThan(6);
 
 		const exported = await exportVideo(studio);
 		// 2 s with the middle 40% cut out leaves about 1.2 s.
@@ -280,9 +294,10 @@ test.describe("Studio frame", () => {
 		expect(exported.duration).toBeLessThan(1.45);
 		expect(studio.pageErrors).toEqual([]);
 
-		await editor.getByTestId("clip-restore-button").click();
+		// The mark puts the removed part back.
+		await editor.getByTestId("clip-cut-mark").click();
 		await expect(editor.getByTestId("clip-piece")).toHaveCount(3);
-		await expect(editor.getByTestId("clip-kept-duration")).toHaveCount(0);
+		await expect(editor.getByTestId("clip-cut-mark")).toHaveCount(0);
 	});
 
 	test("offers to connect Yandex Disk from the Export menu instead of failing", async () => {
