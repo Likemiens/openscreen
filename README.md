@@ -22,7 +22,7 @@ Marquee is for people who need to show something on their screen: it records a s
 ## Now
 
 - **Done:** OpenScreen Creator Edition 1.9.0 shipped on 26 October 2026 for Windows, macOS and Linux. The Marquee website, logo and brand page went live on 4 November 2026.
-- **Next:** release 1.10.0, prepared on the `feedback-fixes` branch (clips saved instantly on Windows, a timeline that closes the gap after a cut, steady system audio); rename the app to Marquee, in progress (a new app name moves the settings folder, so settings have to be carried over); merge the website into this repository ([#1](https://github.com/Likemiens/openscreen/pull/1)). No dates yet.
+- **Next:** merge and release [#3](https://github.com/Likemiens/openscreen/pull/3), which carries 1.10.0 (clips saved instantly on Windows, a timeline that closes the gap after a cut, steady system audio) and renames the app to Marquee. Upgrades keep their settings; on macOS and Linux the Yandex Disk token has to be pasted again. Merge the website into this repository ([#1](https://github.com/Likemiens/openscreen/pull/1)). No dates yet.
 
 ## Results
 
@@ -85,7 +85,7 @@ Use the `.AppImage` (any distro), `.deb` (Debian, Ubuntu) or `.pacman` (Arch). C
 For [@Likemiens](https://github.com/Likemiens):
 
 - When 1.10.0 and the first release under the Marquee name ship, and in which order.
-- Whether the repository and the installer files take the Marquee name too.
+- Whether the repository takes the Marquee name too; the installers do in [#3](https://github.com/Likemiens/openscreen/pull/3).
 - Whether to turn on Issues in this repository: they are off, while the website links to them.
 - Goals for downloads and stars.
 
