@@ -18,6 +18,8 @@ add_executable(wgc-capture
   src/audio_sample_utils.h
   src/dshow_webcam_capture.cpp
   src/dshow_webcam_capture.h
+  src/gpu_frame_scaler.cpp
+  src/gpu_frame_scaler.h
   src/main.cpp
   src/mf_encoder.cpp
   src/mf_encoder.h

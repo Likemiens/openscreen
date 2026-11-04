@@ -5,6 +5,7 @@ import {
 	regionToPixelCrop,
 } from "./captureRegion";
 import type { ExportQuality, Mp4FrameRate } from "./exporter/types";
+import type { QuickClipFinalOutput } from "./nativeWindowsRecording";
 import type { CursorCaptureMode } from "./recordingSession";
 
 /**
@@ -68,6 +69,30 @@ const FRAME_RATE_TOLERANCE = 2;
 export const LONG_RECORDING_SECONDS = 5 * 60;
 const MAX_ENCODE_SIDE = 4096;
 const MAX_ENCODE_PIXELS = 4096 * 2304;
+
+/**
+ * What the Windows recorder needs to write a quick clip at its final size: the area as
+ * fractions of the frame and the quality's short side. It plans the size from the frame it
+ * actually captures with the same rules as planQuickClip.
+ */
+export function quickClipFinalOutput(
+	region: CaptureRegion | null,
+	quality: ExportQuality,
+): QuickClipFinalOutput {
+	const shortSide = SHORT_SIDE_BY_QUALITY[quality];
+	return {
+		region:
+			region && !isFullDisplayRegion(region)
+				? {
+						x: region.x / region.displayWidth,
+						y: region.y / region.displayHeight,
+						width: region.width / region.displayWidth,
+						height: region.height / region.displayHeight,
+					}
+				: null,
+		targetShortSide: Number.isFinite(shortSide) ? shortSide : 0,
+	};
+}
 
 function toEven(value: number): number {
 	return Math.max(2, Math.floor(value / 2) * 2);

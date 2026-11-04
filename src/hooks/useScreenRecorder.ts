@@ -20,7 +20,7 @@ import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
-import { canFinalizeQuickClip } from "@/lib/quickClip";
+import { canFinalizeQuickClip, quickClipFinalOutput } from "@/lib/quickClip";
 import {
 	buildPublishedFileName,
 	createDefaultRecordingTitle,
@@ -231,6 +231,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	// Captured when a recording starts: the HUD setup may change before it finishes, and
 	// the finished recording must be described by what it was actually filmed with.
 	const activeRegion = useRef<CaptureRegion | null>(null);
+	// The recorder already cropped the area while recording (Windows quick clips): the file
+	// holds just the area, so it must not be cropped again.
+	const regionRecorded = useRef(false);
 	const activeSetup = useRef<{
 		cursorCaptureMode: CursorCaptureMode;
 		exportOptions: CompletedRecordingExportOptions;
@@ -266,7 +269,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					cursorCaptureMode: setup.cursorCaptureMode,
 					hasWebcamTrack,
 				}),
-				region: activeRegion.current,
+				region: regionRecorded.current ? null : activeRegion.current,
 			});
 		},
 		[],
@@ -1072,6 +1075,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				cursor: {
 					mode: cursorCaptureMode,
 				},
+				// A quick clip is written at its final size, so Stop has nothing left to encode.
+				...(canFinalizeQuickClip({ cursorCaptureMode, hasWebcamTrack: webcamEnabled })
+					? {
+							finalOutput: quickClipFinalOutput(activeRegion.current, defaultExportOptions.quality),
+						}
+					: {}),
 			};
 			const result = await window.electronAPI.startNativeWindowsRecording(request);
 			if (!result.success || !result.recordingId) {
@@ -1091,6 +1100,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					!loadUserPreferences().hideSoftwareEncoderFallbackNotice,
 			);
 
+			regionRecorded.current = Boolean(result.finalOutputApplied && request.finalOutput?.region);
 			recordingId.current = result.recordingId;
 			nativeWindowsRecording.current = {
 				recordingId: result.recordingId,
@@ -1285,6 +1295,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		// An area capture records the whole display the area sits on and crops afterwards,
 		// so make sure that display is the source even if another one was picked since.
 		activeRegion.current = null;
+		regionRecorded.current = false;
 		activeSetup.current = { cursorCaptureMode, exportOptions: defaultExportOptions };
 		if (captureMode === "area" && captureRegion) {
 			try {

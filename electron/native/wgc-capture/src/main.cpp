@@ -1,4 +1,5 @@
 #include "audio_sample_utils.h"
+#include "gpu_frame_scaler.h"
 #include "mf_encoder.h"
 #include "monitor_utils.h"
 #include "wasapi_loopback_capture.h"
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cctype>
 #include <cstdint>
@@ -50,7 +52,68 @@ struct CaptureConfig {
     int webcamWidth = 0;
     int webcamHeight = 0;
     int webcamFps = 0;
+    // A quick clip is written at its final size: the selected area of the frame (fractions of
+    // it; a width of 0 means the whole frame) scaled to the quality's short side (0: as is).
+    bool finalOutput = false;
+    double regionX = 0;
+    double regionY = 0;
+    double regionWidth = 0;
+    double regionHeight = 0;
+    int targetShortSide = 0;
 };
+
+int toEven(double value) {
+    return std::max(2, static_cast<int>(std::floor(value / 2)) * 2);
+}
+
+struct FinalOutputPlan {
+    RECT crop{};
+    int width = 0;
+    int height = 0;
+    int bitrate = 0;
+};
+
+// The size a quick clip is saved at, worked out from the captured frame exactly as the app's
+// planQuickClip/regionToPixelCrop (src/lib/quickClip.ts, src/lib/captureRegion.ts) do, so a
+// clip recorded at its final size is the clip the app would have made from the whole frame.
+FinalOutputPlan planFinalOutput(int frameWidth, int frameHeight, const CaptureConfig& config) {
+    FinalOutputPlan plan;
+    int baseWidth = toEven(frameWidth);
+    int baseHeight = toEven(frameHeight);
+    plan.crop = RECT{0, 0, baseWidth, baseHeight};
+    const bool hasRegion = config.regionWidth > 0 && config.regionHeight > 0 &&
+        (config.regionX > 0 || config.regionY > 0 || config.regionWidth < 1 || config.regionHeight < 1);
+    if (hasRegion) {
+        const int cropWidth = std::min(toEven(std::round(config.regionWidth * frameWidth)), baseWidth);
+        const int cropHeight = std::min(toEven(std::round(config.regionHeight * frameHeight)), baseHeight);
+        const int left = std::clamp(static_cast<int>(std::round(config.regionX * frameWidth)), 0, frameWidth - cropWidth);
+        const int top = std::clamp(static_cast<int>(std::round(config.regionY * frameHeight)), 0, frameHeight - cropHeight);
+        plan.crop = RECT{left, top, left + cropWidth, top + cropHeight};
+        baseWidth = cropWidth;
+        baseHeight = cropHeight;
+    }
+
+    const int shortSide = std::min(baseWidth, baseHeight);
+    const double scale = config.targetShortSide > 0 && shortSide > config.targetShortSide
+        ? static_cast<double>(config.targetShortSide) / shortSide
+        : 1.0;
+    // H.264 encoders commonly stop at 4096 px per side and about 4096 x 2304 pixels.
+    const double encodeScale = std::min({
+        scale,
+        4096.0 / baseWidth,
+        4096.0 / baseHeight,
+        std::sqrt((4096.0 * 2304.0) / (static_cast<double>(baseWidth) * baseHeight)),
+    });
+    const auto fit = [&](double value) { return encodeScale < scale ? std::floor(value) : std::round(value); };
+    plan.width = toEven(fit(baseWidth * encodeScale));
+    plan.height = toEven(fit(baseHeight * encodeScale));
+
+    // Screen content compresses well: 0.08 bits per pixel per frame keeps text crisp while
+    // the file stays small enough to share (calculateQuickClipBitrate).
+    const double rawBitrate = static_cast<double>(plan.width) * plan.height * config.fps * 0.08;
+    plan.bitrate = static_cast<int>(std::round(std::clamp(rawBitrate, 3000000.0, 40000000.0)));
+    return plan;
+}
 
 struct CaptureControl {
     std::atomic<bool> stopRequested = false;
@@ -343,6 +406,12 @@ bool parseConfig(const std::string& json, CaptureConfig& config) {
     config.microphoneDeviceId = findString(json, "microphoneDeviceId");
     config.microphoneDeviceName = findString(json, "microphoneDeviceName");
     config.microphoneGain = findDouble(json, "microphoneGain", 1.0);
+    config.finalOutput = findBool(json, "quickClipOutput", false);
+    config.regionX = findDouble(json, "regionX", 0);
+    config.regionY = findDouble(json, "regionY", 0);
+    config.regionWidth = findDouble(json, "regionWidth", 0);
+    config.regionHeight = findDouble(json, "regionHeight", 0);
+    config.targetShortSide = findInt(json, "targetShortSide", 0);
     config.webcamDeviceId = findString(json, "webcamDeviceId");
     config.webcamDeviceName = findString(json, "webcamDeviceName");
     config.webcamDirectShowClsid = findString(json, "webcamDirectShowClsid");
@@ -444,7 +513,44 @@ int main(int argc, char* argv[]) {
     height = (std::max(2, height) / 2) * 2;
 
     const int pixels = width * height;
-    const int bitrate = pixels >= 3840 * 2160 ? 45'000'000 : pixels >= 2560 * 1440 ? 28'000'000 : 18'000'000;
+    int bitrate = pixels >= 3840 * 2160 ? 45'000'000 : pixels >= 2560 * 1440 ? 28'000'000 : 18'000'000;
+
+    // A quick clip is cropped and scaled on the GPU while it records, so it is final the
+    // moment it stops. If the GPU can't, the frame is recorded whole and the app crops and
+    // scales it after Stop, as it always did.
+    std::unique_ptr<GpuFrameScaler> scaler;
+    if (config.finalOutput) {
+        const FinalOutputPlan plan = planFinalOutput(session.captureWidth(), session.captureHeight(), config);
+        const bool needsScaler = plan.crop.left != 0 || plan.crop.top != 0 ||
+            plan.crop.right != width || plan.crop.bottom != height ||
+            plan.width != width || plan.height != height;
+        bool applied = !needsScaler;
+        if (needsScaler) {
+            scaler = std::make_unique<GpuFrameScaler>();
+            if (scaler->initialize(
+                    session.device(),
+                    session.context(),
+                    static_cast<UINT>(session.captureWidth()),
+                    static_cast<UINT>(session.captureHeight()),
+                    plan.crop,
+                    static_cast<UINT>(plan.width),
+                    static_cast<UINT>(plan.height))) {
+                applied = true;
+            } else {
+                scaler.reset();
+                std::cerr << "WARNING: Recording the whole frame; the clip will be cropped after Stop"
+                          << std::endl;
+            }
+        }
+        if (applied) {
+            width = plan.width;
+            height = plan.height;
+            bitrate = plan.bitrate;
+        }
+        std::cout << "{\"event\":\"final-output\",\"schemaVersion\":2,\"applied\":"
+                  << (applied ? "true" : "false") << ",\"width\":" << width << ",\"height\":" << height
+                  << "}" << std::endl;
+    }
 
     WebcamCapture webcamCapture;
     bool webcamActive = false;
@@ -579,7 +685,8 @@ int main(int argc, char* argv[]) {
         if (!latestFrameTexture) {
             D3D11_TEXTURE2D_DESC desc{};
             texture->GetDesc(&desc);
-            desc.BindFlags = 0;
+            // The GPU scaler reads it through a video processor input view.
+            desc.BindFlags = scaler ? D3D11_BIND_RENDER_TARGET : 0;
             desc.CPUAccessFlags = 0;
             desc.MiscFlags = 0;
             if (FAILED(session.device()->CreateTexture2D(&desc, nullptr, &latestFrameTexture))) {
@@ -669,13 +776,25 @@ int main(int argc, char* argv[]) {
                     webcamOutputFrameIndex += 1;
                 }
                 if (latestFrameTexture) {
+                    // Crop and scale to the clip's final size first, still under `mutex`:
+                    // the scaler uses the same immediate context.
+                    ID3D11Texture2D* frameToEncode = latestFrameTexture.Get();
+                    if (scaler) {
+                        if (!scaler->process(frameToEncode)) {
+                            encodeFailed = true;
+                            control.stopRequested = true;
+                            control.cv.notify_all();
+                            break;
+                        }
+                        frameToEncode = scaler->output();
+                    }
                     // captureVideoSample performs the GPU readback
-                    // (CopyResource/Map) from latestFrameTexture, which must
+                    // (CopyResource/Map) from the frame, which must
                     // stay serialized (via `mutex`) against the WGC
                     // frame-arrival callback above, which writes new data
-                    // into the same texture on another thread.
+                    // into latestFrameTexture on another thread.
                     hasVideoSample = encoder.captureVideoSample(
-                        latestFrameTexture.Get(),
+                        frameToEncode,
                         frameTimestampHns,
                         !writeSeparateWebcam && webcamFrame.data ? &webcamFrame : nullptr,
                         videoSample);

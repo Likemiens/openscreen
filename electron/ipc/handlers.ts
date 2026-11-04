@@ -1093,6 +1093,39 @@ function readNativeWindowsWebcamFormat(output: string) {
 	}
 }
 
+/** Whether the helper writes the clip at its final size ("final-output"), when it was asked to. */
+function readNativeWindowsFinalOutputApplied(output: string): boolean {
+	const line = output
+		.split(/\r?\n/)
+		.filter((entry) => entry.includes('"event":"final-output"'))
+		.at(-1);
+	if (!line) return false;
+	try {
+		return (JSON.parse(line) as { applied?: unknown }).applied === true;
+	} catch {
+		return false;
+	}
+}
+
+/** The final-output request, kept to fractions and a sane short side before it reaches the helper. */
+function nativeFinalOutputConfig(finalOutput: NativeWindowsRecordingRequest["finalOutput"]) {
+	if (!finalOutput) return {};
+	const fraction = (value: unknown) =>
+		typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+	const shortSide =
+		typeof finalOutput.targetShortSide === "number" && Number.isFinite(finalOutput.targetShortSide)
+			? Math.max(0, Math.round(finalOutput.targetShortSide))
+			: 0;
+	return {
+		quickClipOutput: true,
+		regionX: fraction(finalOutput.region?.x),
+		regionY: fraction(finalOutput.region?.y),
+		regionWidth: fraction(finalOutput.region?.width),
+		regionHeight: fraction(finalOutput.region?.height),
+		targetShortSide: shortSide,
+	};
+}
+
 function readNativeWindowsEncoderSelection(output: string) {
 	const lines = output
 		.split(/\r?\n/)
@@ -1728,6 +1761,7 @@ export function registerIpcHandlers(
 					webcamFps: request.webcam.fps,
 					captureCursor: cursorCaptureMode === "system",
 					cursorCaptureMode,
+					...nativeFinalOutputConfig(request.finalOutput),
 					outputs: {
 						screenPath: outputPath,
 						webcamPath: webcamOutputPath,
@@ -1817,6 +1851,7 @@ export function registerIpcHandlers(
 					path: outputPath,
 					helperPath,
 					videoEncoderSelection: encoderSelection?.video ?? null,
+					finalOutputApplied: readNativeWindowsFinalOutputApplied(nativeWindowsCaptureOutput),
 				};
 			} catch (error) {
 				console.error("Failed to start native Windows recording:", error);

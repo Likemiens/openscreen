@@ -7,6 +7,7 @@ import {
 	formatFileSize,
 	LONG_RECORDING_SECONDS,
 	planQuickClip,
+	quickClipFinalOutput,
 } from "./quickClip";
 
 const REGION: CaptureRegion = {
@@ -171,6 +172,22 @@ describe("planQuickClip", () => {
 		});
 		expect(plan.width % 2).toBe(0);
 		expect(plan.height % 2).toBe(0);
+	});
+});
+
+describe("quickClipFinalOutput", () => {
+	it("tells the recorder the area as fractions of the frame and the quality's short side", () => {
+		expect(quickClipFinalOutput({ ...REGION, x: 640, y: 360 }, "good")).toEqual({
+			region: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+			targetShortSide: 1080,
+		});
+		expect(quickClipFinalOutput(REGION, "medium").targetShortSide).toBe(720);
+	});
+
+	it("keeps the whole frame for a full-display area or none, and the size for Original", () => {
+		const fullDisplay = { ...REGION, width: 2560, height: 1440 };
+		expect(quickClipFinalOutput(fullDisplay, "good").region).toBeNull();
+		expect(quickClipFinalOutput(null, "source")).toEqual({ region: null, targetShortSide: 0 });
 	});
 });
 

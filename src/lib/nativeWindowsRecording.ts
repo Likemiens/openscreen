@@ -37,6 +37,18 @@ export type NativeWindowsRecordingRequest = {
 	cursor: {
 		mode: import("./recordingSession").CursorCaptureMode;
 	};
+	/**
+	 * Set for a quick clip: the recorder writes it at its final size, so nothing is left to
+	 * crop or scale after Stop.
+	 */
+	finalOutput?: QuickClipFinalOutput;
+};
+
+export type QuickClipFinalOutput = {
+	/** The area to keep, as fractions of the recorded frame; null for the whole frame. */
+	region: { x: number; y: number; width: number; height: number } | null;
+	/** Short side of the clip in pixels; 0 keeps the recorded size. */
+	targetShortSide: number;
 };
 
 export type NativeWindowsRecordingStartResult = {
@@ -47,6 +59,8 @@ export type NativeWindowsRecordingStartResult = {
 	error?: string;
 	/** Helper-reported encoder selection: "default", "software-preferred", or "software-fallback". */
 	videoEncoderSelection?: string | null;
+	/** Whether the recorder writes the clip at its final size (it falls back to the whole frame). */
+	finalOutputApplied?: boolean;
 };
 
 export function parseWindowHandleFromSourceId(sourceId?: string | null) {
