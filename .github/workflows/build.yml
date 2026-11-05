@@ -155,7 +155,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ matrix.arch }}"
-          DMG_NAME="OpenScreen-Mac-${ARCH}-${VERSION}.dmg"
+          DMG_NAME="Marquee-Mac-${ARCH}-${VERSION}.dmg"
           RELEASE_DIR="release/${VERSION}"
           DMG_OUTPUT="${RELEASE_DIR}/${DMG_NAME}"
           STAGING="${RELEASE_DIR}/dmg-staging"
@@ -168,7 +168,7 @@ jobs:
 
           hdiutil create \
             -srcfolder "$STAGING" \
-            -volname "OpenScreen" \
+            -volname "Marquee" \
             -fs HFS+ \
             -fsargs "-c c=64,a=16,e=16" \
             -format UDBZ \
@@ -346,7 +346,7 @@ jobs:
           PRERELEASE_FLAG: ${{ steps.release.outputs.prerelease_flag }}
           NOTES_START_TAG: ${{ steps.release.outputs.notes_start_tag }}
         run: |
-          TITLE="OpenScreen Creator Edition ${TAG#v}"
+          TITLE="Marquee ${TAG#v}"
           mapfile -t FILES < <(find artifacts -type f | sort)
           if [[ "${#FILES[@]}" -eq 0 ]]; then
             echo "::error::No installer artifacts were downloaded"

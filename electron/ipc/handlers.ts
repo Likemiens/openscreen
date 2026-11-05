@@ -1488,7 +1488,7 @@ export function registerIpcHandlers(
 			const detail =
 				access.status === "missing-helper"
 					? "The cursor helper couldn't be found in this build, so the editable cursor can't be enabled. Rebuild the native helper (npm run build:native:mac) or switch the HUD cursor mode to system."
-					: "Allow OpenScreen under System Settings → Privacy & Security → Accessibility, then press record again to start the countdown.";
+					: "Allow Marquee under System Settings → Privacy & Security → Accessibility, then press record again to start the countdown.";
 			const messageOptions = {
 				type: "warning",
 				buttons: ["Open Accessibility Settings", "Cancel"],
@@ -1523,7 +1523,7 @@ export function registerIpcHandlers(
 					cancelId: 1,
 					message: "Screen Recording permission is required",
 					detail:
-						"Allow OpenScreen in macOS System Settings, then come back and choose a screen or window.",
+						"Allow Marquee in macOS System Settings, then come back and choose a screen or window.",
 				} satisfies Electron.MessageBoxOptions;
 				const result =
 					mainWin && !mainWin.isDestroyed()
@@ -2944,7 +2944,7 @@ export function registerIpcHandlers(
 			}
 			// Validate extension and readability
 			if (path.extname(filePath).toLowerCase() !== `.${PROJECT_FILE_EXTENSION}`) {
-				return { success: false, message: "Not an Openscreen project file" };
+				return { success: false, message: "Not a Marquee project file" };
 			}
 			const stats = await fs.stat(filePath).catch(() => null);
 			if (!stats?.isFile()) {
@@ -3095,7 +3095,7 @@ export function registerIpcHandlers(
 		) => {
 			const { filePath, canceled } = await dialog.showSaveDialog({
 				title: "Save Diagnostic File",
-				defaultPath: `openscreen-diagnostic-${Date.now()}.json`,
+				defaultPath: `marquee-diagnostic-${Date.now()}.json`,
 				filters: [{ name: "JSON", extensions: ["json"] }],
 			});
 

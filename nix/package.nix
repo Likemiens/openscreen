@@ -98,8 +98,10 @@ buildNpmPackage {
 
   desktopItems = [
     (makeDesktopItem {
+      # The file stays openscreen.desktop: on Wayland, windows are matched by the package name.
+      # On X11 they are matched by startupWMClass, the app name set in electron/appIdentity.ts.
       name = "openscreen";
-      desktopName = "OpenScreen";
+      desktopName = "Marquee";
       genericName = "Screen Recorder";
       exec = "openscreen %U";
       icon = "openscreen";
@@ -109,7 +111,7 @@ buildNpmPackage {
         "Video"
         "Recorder"
       ];
-      startupWMClass = "Openscreen";
+      startupWMClass = "Marquee";
       terminal = false;
     })
   ];

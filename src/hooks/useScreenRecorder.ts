@@ -200,7 +200,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		() =>
 			browserPreview === "draft"
 				? {
-						filePath: "C:\\OpenScreen\\recording.webm",
+						filePath: "C:\\Marquee\\recording.webm",
 						title: "Product walkthrough",
 						exportOptions: { quality: "good", frameRate: 60 },
 						quickClip: false,

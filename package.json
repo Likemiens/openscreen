@@ -2,7 +2,7 @@
 	"name": "openscreen",
 	"private": true,
 	"version": "1.9.0",
-	"description": "OpenScreen — персональный рекордер экрана и видеоредактор",
+	"description": "Marquee — персональный рекордер экрана и видеоредактор",
 	"type": "module",
 	"packageManager": "npm@10.9.4",
 	"engines": {
