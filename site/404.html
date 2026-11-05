@@ -3,22 +3,24 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-	<title>Page not found · Marquee</title>
+	<title data-i18n="404.title">Page not found · Marquee</title>
 	<meta name="robots" content="noindex">
 	<meta name="theme-color" content="#181818">
 	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+	<script src="/lang.js"></script>
 	<link rel="stylesheet" href="/styles.css">
+	<script src="/i18n.js" defer></script>
 </head>
 <body>
 	<main id="main" class="lost">
-		<a class="brand" href="/" aria-label="Marquee home">
+		<a class="brand" href="/" aria-label="Marquee home" data-i18n-attr="aria-label:brand.home">
 			<svg class="brand-mark" viewBox="0 0 40 32" aria-hidden="true"><path d="M20 2H31A7 7 0 0 1 38 9V23A7 7 0 0 1 31 30H9A7 7 0 0 1 2 23V9A7 7 0 0 1 9 2Z" pathLength="18"/><circle cx="20" cy="16" r="6"/></svg>
 			<span class="title-2">Marquee</span>
 		</a>
-		<p class="eyebrow caption-3">Error 404</p>
-		<h1 class="heading-2">This scene was cut.</h1>
-		<p class="body-3 lost-sub">The page you asked for is not on the program. The main stage is one click away.</p>
-		<a class="btn btn-rec button-md" href="/">Back to the main stage</a>
+		<p class="eyebrow caption-3" data-i18n="404.eyebrow">Error 404</p>
+		<h1 class="heading-2" data-i18n="404.h">This scene was cut.</h1>
+		<p class="body-3 lost-sub" data-i18n="404.sub">The page you asked for is not on the program. The main stage is one click away.</p>
+		<a class="btn btn-rec button-md" href="/" data-i18n="404.cta">Back to the main stage</a>
 	</main>
 </body>
 </html>

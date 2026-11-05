@@ -115,17 +115,33 @@
 	}
 
 	// ---- Tagline: words light up one at a time as the block scrolls by -------
+	// The words in <em> glow like bulbs. Chinese has no spaces, so it is split into words.
 	const tagline = document.querySelector("[data-tagline]");
 	if (tagline) {
-		const hot = new Set(["own.", "ask,", "paywall."]);
-		const words = tagline.textContent.trim().split(/\s+/);
-		tagline.textContent = "";
-		const spans = words.map((w, i) => {
-			const s = document.createElement("span");
-			s.className = hot.has(w) ? "w hot" : "w";
-			s.textContent = w;
-			tagline.append(s, i < words.length - 1 ? " " : "");
-			return s;
+		const cjk = document.documentElement.lang.startsWith("zh");
+		const words = (text) => {
+			if (!cjk) return text.split(/\s+/).filter(Boolean);
+			if (!Intl.Segmenter) return [...text].map((segment) => ({ segment, isWordLike: true }));
+			return [...new Intl.Segmenter("zh", { granularity: "word" }).segment(text)];
+		};
+		const spans = [];
+		for (const node of [...tagline.childNodes]) {
+			const hot = node.nodeType === Node.ELEMENT_NODE;
+			for (const w of words(node.textContent)) {
+				// Chinese punctuation joins the word before it.
+				if (cjk && !w.isWordLike && spans.length) {
+					spans[spans.length - 1].textContent += w.segment;
+					continue;
+				}
+				const s = document.createElement("span");
+				s.className = hot ? "w hot" : "w";
+				s.textContent = cjk ? w.segment : w;
+				spans.push(s);
+			}
+		}
+		tagline.replaceChildren();
+		spans.forEach((s, i) => {
+			tagline.append(s, cjk || i === spans.length - 1 ? "" : " ");
 		});
 		if (reduce) {
 			for (const s of spans) s.classList.add("is-lit");
