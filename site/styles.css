@@ -73,10 +73,42 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
+/* lang.js hides a translated page until i18n.js has put the text in: a moment at most. */
+.i18n-wait body {
+	visibility: hidden;
+	animation: i18n-show 0s 1.2s forwards;
+}
+
+@keyframes i18n-show {
+	to {
+		visibility: visible;
+	}
+}
+
+/* Chinese has no use for the tight Latin tracking of the headings, and its glyphs fill the
+   whole line, so the hero's three lines get a little air. */
+:lang(zh) .heading-1,
+:lang(zh) .heading-2,
+:lang(zh) .heading-3,
+:lang(zh) .heading-6,
+:lang(zh) .tagline-text {
+	letter-spacing: 0;
+}
+
+.hero-title:lang(zh) {
+	line-height: 1.2;
+}
+
 img,
 svg {
 	display: block;
 	max-width: 100%;
+}
+
+/* Sprite icons take the colour of their text. */
+.ico {
+	flex: none;
+	fill: currentColor;
 }
 
 a {
@@ -242,6 +274,12 @@ li {
 @media (max-width: 640px) {
 	.heading-1 {
 		font-size: 3rem;
+	}
+
+	/* Russian and Spanish lines run longer: each hero line still fits on one row. */
+	.hero-title:lang(ru),
+	.hero-title:lang(es) {
+		font-size: clamp(2rem, 9.4vw, 3rem);
 	}
 
 	.heading-2 {
@@ -2062,6 +2100,11 @@ main > .tagline {
 	text-shadow: 0 0 24px rgba(255, 176, 84, 0.45);
 }
 
+/* The hot words are marked with <em> in the text; main.js turns them into bulbs. */
+.tagline-text em {
+	font-style: normal;
+}
+
 /* ---- Free ----------------------------------------------------------------- */
 
 .facts {
@@ -2267,6 +2310,38 @@ main > .finale {
 
 .footer-brand p {
 	color: var(--text-2);
+}
+
+.footer-author b {
+	color: var(--text);
+	font-weight: 500;
+}
+
+.footer-socials {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.langs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 12px;
+}
+
+.langs .ico {
+	width: 16px;
+	height: 16px;
+}
+
+.langs a {
+	transition: color 300ms var(--ease);
+}
+
+.langs a:hover,
+.langs a[aria-current] {
+	color: var(--text);
 }
 
 .footer-cols {
