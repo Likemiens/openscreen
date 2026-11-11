@@ -219,7 +219,7 @@ export function registerQuickCaptureIpcHandlers(
 	// prepared ahead of time when the card asks for its thumbnail.
 	const dragIcons = new Map<string, Electron.NativeImage>();
 	const fallbackDragIcon = nativeImage
-		.createFromPath(path.join(process.env.VITE_PUBLIC ?? "", "openscreen.png"))
+		.createFromPath(path.join(process.env.VITE_PUBLIC ?? "", "app-icon.png"))
 		.resize({ width: 64, height: 64 });
 
 	function rememberClip(filePath: string) {
@@ -396,7 +396,7 @@ export function registerQuickCaptureIpcHandlers(
 		async (_, sourcePath: string, title: unknown): Promise<ClipFileResult> => {
 			try {
 				if (typeof sourcePath !== "string" || !isPathWithin(sourcePath, deps.recordingsDir)) {
-					return { success: false, error: "Only OpenScreen recordings can be saved as clips." };
+					return { success: false, error: "Only Marquee recordings can be saved as clips." };
 				}
 				const folder = await deps.settings.resolveSaveFolder();
 				const finalPath = await resolveUniqueClipPath(folder, title);
@@ -556,7 +556,7 @@ export function registerQuickCaptureIpcHandlers(
 				typeof screenVideoPath !== "string" ||
 				!isPathWithin(screenVideoPath, deps.recordingsDir)
 			) {
-				return { success: false, error: "Not an OpenScreen recording." };
+				return { success: false, error: "Not a Marquee recording." };
 			}
 			const clip = typeof clipPath === "string" ? resolveKnownClip(clipPath) : null;
 			const clipSize = clip

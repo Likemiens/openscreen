@@ -149,7 +149,7 @@ export function EditorEmptyState({
 					<DialogHeader className="mb-4">
 						<div className="flex items-center gap-3">
 							<img
-								src="./openscreen.png"
+								src="./app-icon.png"
 								alt=""
 								aria-hidden="true"
 								className="w-9 h-9 rounded-xl flex-shrink-0"
@@ -187,7 +187,7 @@ export function EditorEmptyState({
 			<div className="relative flex flex-col items-center gap-8 px-6 text-center">
 				{/* Logo */}
 				<img
-					src="./openscreen.png"
+					src="./app-icon.png"
 					alt=""
 					aria-hidden="true"
 					className="h-16 w-16 rounded-2xl opacity-90"

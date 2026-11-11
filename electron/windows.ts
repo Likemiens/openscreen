@@ -227,7 +227,7 @@ export function createEditorWindow(options: EditorLaunchOptions = {}): BrowserWi
 		resizable: true,
 		alwaysOnTop: false,
 		skipTaskbar: false,
-		title: "OpenScreen",
+		title: "Marquee",
 		backgroundColor: "#161618",
 		show: false, // shown via ready-to-show to avoid white flash on first load
 		webPreferences: {

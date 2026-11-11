@@ -146,7 +146,7 @@ describe("SettingsPanel", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Recording presets" }));
 		fireEvent.click(screen.getByRole("button", { name: "Open Studio" }));
 		fireEvent.click(screen.getByRole("button", { name: "Edit a video file…" }));
-		fireEvent.click(screen.getByRole("button", { name: "Quit OpenScreen" }));
+		fireEvent.click(screen.getByRole("button", { name: "Quit Marquee" }));
 
 		expect(props.onOpenYandexDisk).toHaveBeenCalledTimes(1);
 		expect(props.onOpenPresets).toHaveBeenCalledTimes(1);

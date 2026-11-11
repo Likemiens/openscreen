@@ -791,8 +791,8 @@ export function SettingsPanel({
 					</button>
 					<button
 						type="button"
-						title="Star OpenScreen Creator Edition on GitHub"
-						aria-label="Star OpenScreen Creator Edition on GitHub"
+						title="Star Marquee on GitHub"
+						aria-label="Star Marquee on GitHub"
 						data-testid="studio-star-link"
 						onClick={() => {
 							window.electronAPI?.openExternalUrl(CREATOR_EDITION_REPOSITORY_URL);

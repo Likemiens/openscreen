@@ -383,7 +383,7 @@ class YandexDiskService {
 			this.approvedUploadPaths.has(this.normalizeApprovedPath(filePath)) ||
 			this.approvedUploadPaths.has(this.normalizeApprovedPath(resolvedFilePath));
 		if (!stats.isFile() || !isOpenScreenFile) {
-			return { success: false, error: "Only files created by OpenScreen can be uploaded." };
+			return { success: false, error: "Only files created by Marquee can be uploaded." };
 		}
 
 		const settings = await this.readSettings();
@@ -566,7 +566,7 @@ class YandexDiskService {
 						fs.realpath(this.recordingsDirectory),
 					]);
 					if (!isPathWithinDirectory(resolvedFilePath, resolvedRecordingsDirectory)) {
-						throw new Error("Refusing to delete a file outside the OpenScreen recordings folder.");
+						throw new Error("Refusing to delete a file outside the Marquee recordings folder.");
 					}
 					await fs.unlink(resolvedFilePath);
 					this.broadcast({

@@ -47,7 +47,7 @@ Function TranscriptionPageCreate
     ${NSD_Check} $TranscriptionCheckbox
   ${EndIf}
 
-  ${NSD_CreateLabel} 12u 20u -12u 64u "Turns the speech in a recording into a text transcript and .srt subtitles, on this computer and without uploading anything. It takes 26 MB here; the speech model (250 to 560 MB) is downloaded the first time you transcribe.$\r$\n$\r$\nLeave it unchecked to keep OpenScreen smaller. To add it later, run this installer again."
+  ${NSD_CreateLabel} 12u 20u -12u 64u "Turns the speech in a recording into a text transcript and .srt subtitles, on this computer and without uploading anything. It takes 26 MB here; the speech model (250 to 560 MB) is downloaded the first time you transcribe.$\r$\n$\r$\nLeave it unchecked to keep Marquee smaller. To add it later, run this installer again."
   Pop $0
 
   nsDialogs::Show
