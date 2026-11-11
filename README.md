@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://marquee-five-sigma.vercel.app/og.png" alt="Marquee. Draw a box. Hit record. Send the clip. A free, open source screen recorder for Windows, macOS and Linux" width="820" />
+  <img src="https://marquee.likemiens.com/og.png" alt="Marquee. Draw a box. Hit record. Send the clip. A free, open source screen recorder for Windows, macOS and Linux" width="820" />
 </p>
 
 # Marquee
 
 A free, open source screen recorder for Windows, macOS and Linux: draw a box, record, and send the clip the moment you stop. Studio is there when a video needs polish.
 
-**Stage:** in progress · **Timeline:** since 1 August 2026, ongoing · **Customer:** internal · **Updated:** 4 November 2026
+**Stage:** in progress · **Timeline:** since 1 August 2026, ongoing · **Customer:** internal · **Updated:** 12 November 2026
 
-[Website](https://marquee-five-sigma.vercel.app) · [Download](https://github.com/Likemiens/openscreen/releases/latest) · [User guide](docs/guide.md) · [Brand assets](https://marquee-five-sigma.vercel.app/brand) · [Code](https://github.com/Likemiens/openscreen)
+[Website](https://marquee.likemiens.com) · [Download](https://github.com/Likemiens/openscreen/releases/latest) · [User guide](docs/guide.md) · [Brand assets](https://marquee.likemiens.com/brand) · [Code](https://github.com/Likemiens/openscreen)
 
 > [!NOTE]
 > Marquee is the new name of **OpenScreen Creator Edition**, chosen on 4 November 2026. Until the rename lands, the app, its installers and its folders still say OpenScreen.
@@ -21,8 +21,8 @@ Marquee is for people who need to show something on their screen: it records a s
 
 ## Now
 
-- **Done:** OpenScreen Creator Edition 1.9.0 shipped on 26 October 2026 for Windows, macOS and Linux. The Marquee website, logo and brand page went live on 4 November 2026.
-- **Next:** release 1.10.0 (clips saved instantly on Windows, a timeline that closes the gap after a cut, steady system audio); it is on the `feedback-fixes` branch, with no pull request yet. Rename the app to Marquee ([#3](https://github.com/Likemiens/openscreen/pull/3)): upgrades keep their settings; on macOS and Linux the Yandex Disk token has to be pasted again. Merge the website into this repository ([#1](https://github.com/Likemiens/openscreen/pull/1)). No dates yet.
+- **Done:** OpenScreen Creator Edition 1.9.0 shipped on 26 October 2026 for Windows, macOS and Linux. The Marquee website, logo and brand page went live on 4 November 2026, with the website's code in this repository (`site/`); on 12 November 2026 the website got its own address, marquee.likemiens.com.
+- **Next:** release 1.10.0 (clips saved instantly on Windows, a timeline that closes the gap after a cut, steady system audio); it is on the `feedback-fixes` branch, with no pull request yet. Rename the app to Marquee ([#3](https://github.com/Likemiens/openscreen/pull/3)): upgrades keep their settings; on macOS and Linux the Yandex Disk token has to be pasted again. No dates yet.
 
 ## Results
 
@@ -66,7 +66,7 @@ Use the `.AppImage` (any distro), `.deb` (Debian, Ubuntu) or `.pacman` (Arch). C
 
 | What | Where |
 | --- | --- |
-| Website and brand assets | [marquee-five-sigma.vercel.app](https://marquee-five-sigma.vercel.app), [brand page](https://marquee-five-sigma.vercel.app/brand) |
+| Website and brand assets | [marquee.likemiens.com](https://marquee.likemiens.com), [brand page](https://marquee.likemiens.com/brand) |
 | Downloads and release notes | [Releases](https://github.com/Likemiens/openscreen/releases), [docs/releases](docs/releases), [1-minute demo video](https://github.com/Likemiens/openscreen/releases/download/v1.9.0/OpenScreen-demo.mp4) |
 | User guide | [docs/guide.md](docs/guide.md) |
 | Product and decisions (in Russian) | [PRD](docs/prd.md), [decision log](docs/decisions.md), [fork roadmap](docs/customization-roadmap.md) |
@@ -108,4 +108,4 @@ npx tsc && npx vite build && npx electron-builder --win --config.npmRebuild=fals
 
 `npx playwright test tests/e2e/quick-clip.spec.ts` drives the real app on Windows: it selects an area, records a few seconds of the screen, and checks the saved clip. Run `npm run build-vite` first. Lint, typecheck, browser and end-to-end tests, and notes for AI agents are in [AGENTS.md](AGENTS.md).
 
-Secrets: the Yandex Disk token is entered in the app and stored encrypted with Electron `safeStorage`, never in the repository; release and CI secrets are listed in [docs/secrets.md](docs/secrets.md). The website is a static site in `site/`, deployed on Vercel; it arrives with [#1](https://github.com/Likemiens/openscreen/pull/1).
+Secrets: the Yandex Disk token is entered in the app and stored encrypted with Electron `safeStorage`, never in the repository; release and CI secrets are listed in [docs/secrets.md](docs/secrets.md). The website is a static site in `site/`, deployed on Vercel.
