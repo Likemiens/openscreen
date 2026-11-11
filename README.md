@@ -1,226 +1,97 @@
-> [!IMPORTANT]
-> **OpenScreen Creator Edition** is maintained by [@Likemiens](https://github.com/Likemiens). It is a public, forkable creator-focused distribution built on top of upstream OpenScreen. Issues, forks, and contributions are welcome.
+<p align="center">
+  <img src="https://marquee.likemiens.com/og.png" alt="Marquee. Draw a box. Hit record. Send the clip. A free, open source screen recorder for Windows, macOS and Linux" width="820" />
+</p>
+
+# Marquee
+
+A free, open source screen recorder for Windows, macOS and Linux: draw a box, record, and send the clip the moment you stop. Studio is there when a video needs polish.
+
+**Stage:** in progress · **Timeline:** since 1 August 2026, ongoing · **Customer:** internal · **Updated:** 12 November 2026
+
+[Website](https://marquee.likemiens.com) · [Download](https://github.com/Likemiens/openscreen/releases/latest) · [User guide](docs/guide.md) · [Brand assets](https://marquee.likemiens.com/brand) · [Code](https://github.com/Likemiens/openscreen)
 
 > [!NOTE]
-> This repository is an independent continuation of OpenScreen.
->
-> OpenScreen was originally created by [Siddharth Vaddem](https://github.com/siddharthvaddem). The original repository was archived after v1.5.0 and remains available here: [siddharthvaddem/openscreen](https://github.com/siddharthvaddem/openscreen).
->
-> This fork continues development under the OpenScreen name with the original author's approval, while remaining fully MIT open source.
+> Marquee is the new name of **OpenScreen Creator Edition**, chosen on 4 November 2026. Until the rename lands, the app, its installers and its folders still say OpenScreen.
 
-> [!WARNING]
-> OpenScreen is not production-grade software. You should expect bugs, rough edges, and occasional breaking changes.
+## About
 
-<p align="center">
-  <img src="public/openscreen.png" alt="OpenScreen Logo" width="64" />
-</p>
+Marquee is for people who need to show something on their screen: it records a short clip of part of the screen, saves it, and lets you send it, with no settings screen between the hotkey and the file. Longer recordings open in Studio for framing, cutting and export. It is a fork of OpenScreen, created by [Siddharth Vaddem](https://github.com/siddharthvaddem), archived after v1.5.0 and continued at [getopenscreen/openscreen](https://github.com/getopenscreen/openscreen) with the original author's approval; [@Likemiens](https://github.com/Likemiens) has developed this fork since 1 August 2026. It is not production-grade software: expect bugs, rough edges and occasional breaking changes.
 
-# <p align="center">OpenScreen Creator Edition</p>
+**In scope:** area, window and screen recording, Studio, on-device transcripts, share links through Yandex Disk, the website. **Out of scope:** paid tiers or features behind a paywall (it is MIT-licensed and free for personal and commercial use), code-signed installers, a Nix package for this fork, analytics in the app or on the website.
 
-<p align="center"><strong>OpenScreen is a free, open-source tool for creating polished screen recordings, product demos, and walkthroughs.</strong></p>
+## Now
 
-<p align="center">
-  <a href="https://github.com/Likemiens/openscreen/blob/creator-edition/LICENSE"><img src="https://img.shields.io/github/license/Likemiens/openscreen?style=for-the-badge&label=License" alt="License" /></a>
-  <a href="https://github.com/Likemiens"><img src="https://img.shields.io/badge/maintained%20by-%40Likemiens-181717?style=for-the-badge&logo=github" alt="Maintained by Likemiens" /></a>
-  <a href="https://github.com/Likemiens/openscreen/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Likemiens/openscreen/ci.yml?branch=creator-edition&style=for-the-badge&label=CI" alt="CI Status" /></a>
-  <a href="https://discord.gg/VvT6Vtnyh"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
-</p>
+- **Done:** OpenScreen Creator Edition 1.9.0 shipped on 26 October 2026 for Windows, macOS and Linux. The Marquee website, logo and brand page went live on 4 November 2026, with the website's code in this repository (`site/`); on 12 November 2026 the website got its own address, marquee.likemiens.com.
+- **Next:** release 1.10.0 (clips saved instantly on Windows, a timeline that closes the gap after a cut, steady system audio); it is on the `feedback-fixes` branch, with no pull request yet. Rename the app to Marquee ([#3](https://github.com/Likemiens/openscreen/pull/3)): upgrades keep their settings; on macOS and Linux the Yandex Disk token has to be pasted again. No dates yet.
 
-<p align="center">
-  <a href="https://github.com/Likemiens/openscreen/releases/latest"><strong>Download the latest release</strong></a> (Windows, macOS, Linux)
-  &nbsp;·&nbsp;
-  <a href="https://github.com/Likemiens/openscreen/fork"><strong>Fork it</strong></a> and make it yours
-</p>
+## Results
 
+- **Shipped in 1.9.0:** quick clips (hotkey, area, MP4 in your folder), Studio (device mockups at real proportions, crop by the pixel, a clip track you cut into pieces, export from one button), transcripts as `.txt` and `.srt` made on your computer, and share links through Yandex Disk.
+- **Measured:** the Windows installer went from 290 MB to about 157 MB in 1.9.0. Transcribing a 77-second meeting takes about 14 s on a mid-range GPU and about 31 s on the processor. In 1.10.0, saving a 1512×1080 clip takes about 0.6 s instead of about 2 s and no longer grows with the clip's length.
 
-OpenScreen was originally positioned as a free, open-source alternative to Screen Studio: something you can use to create quick, polished product demos and walkthroughs for X, Reddit, YouTube, documentation, landing pages, or internal demos.
+## Metrics
 
-It is not a 1:1 clone of Screen Studio. Screen Studio is an excellent commercial product. OpenScreen focuses on covering the core open-source workflow: recording, zooms, cursor effects, webcam overlay, captions, editing, annotations, and export.
+| Metric | Goal | Actual | Source |
+| --- | --- | --- | --- |
+| GitHub stars | not set | ![GitHub stars](https://img.shields.io/github/stars/Likemiens/openscreen?label=stars) | GitHub, live |
+| Release downloads, all files | not set | ![Release downloads](https://img.shields.io/github/downloads/Likemiens/openscreen/total?label=downloads) | GitHub Releases, live |
+| Yandex Disk publishes that succeed | 95% or more | not measured | [PRD](docs/prd.md) pilot target; the app has no analytics |
+| Local recordings lost to an upload or export error | 0 | not measured | [PRD](docs/prd.md) pilot target |
+| Website visitors | not set | not counted | the website sets no cookies and runs no analytics |
 
-The goal of this continuation is to keep OpenScreen alive as a fully open-source project and progressively evolve it toward a broader recording and editing workflow.
+## How it works
 
-**100% free** for both **personal** and **commercial** use. Use it, modify it, distribute it. Please respect the license.
+| Step | You | Marquee |
+| --- | --- | --- |
+| 1 | Download the installer for your system from [Releases](https://github.com/Likemiens/openscreen/releases/latest) | The installers are not code-signed, so the first launch needs one extra step (below) |
+| 2 | Press the record hotkey and drag out an area, or pick a window or the whole screen | Quality (720p, 1080p or Original) and frame rate (30 or 60) are set before you record |
+| 3 | Press the hotkey again to stop | The MP4 is already in your folder; its card offers Copy file, Copy link (Yandex Disk), Show in folder, Transcribe, Edit in Studio, or dragging the clip into a chat |
+| 4 | Open Studio when the video needs polish | Device frames, backgrounds, aspect ratio, crop, cuts, captions, and export to MP4 or GIF from one button |
 
-> [!NOTE]
-> Software should be accessible. OpenScreen has no paid tiers, premium features, upsells, or functionality locked behind a paywall.
-
-## What Creator Edition Adds
-
-The default [`creator-edition`](https://github.com/Likemiens/openscreen/tree/creator-edition) branch keeps the upstream recorder and Studio editor intact, and puts one job in front of everything else: **record a short clip of part of the screen, have it saved, and send it to someone.**
-
-<p align="center">
-  <img src="docs/assets/quick-clip/hud-idle.png" alt="The OpenScreen recorder: Area, Window or Screen, audio and camera toggles, quality, and Record" width="760" />
-</p>
-
-### Quick clips
-
-1. Press the record hotkey (or click **Record**). The area picker appears with your last area already drawn.
-2. Drag out the area, or press <kbd>Enter</kbd> to reuse the previous one.
-3. Press the hotkey again to stop. A second or two later the MP4 is in your clips folder, and a card offers **Copy link**, **Copy file**, **Show in folder**, **Edit in Studio**, or dragging the clip straight into a chat.
-
-<p align="center">
-  <img src="docs/assets/quick-clip/area-picker.png" alt="Area picker with aspect ratio and exact-size presets" width="620" />
-</p>
-<p align="center">
-  <img src="docs/assets/quick-clip/hud-clip-card.png" alt="Finished clip card above the recorder" width="700" />
-</p>
-
-- **Area, window or screen capture.** The area picker supports free, 16:9, 4:3, 1:1 and 9:16 selections, exact 720p and 1080p sizes, moving, resizing and keyboard nudging. It shows the size in real pixels, and the selection is outlined while it records (the outline never ends up in the video).
-- **Quality is chosen before you record.** 720p, 1080p or Original, at 30 or 60 fps, with an estimate of megabytes per minute. The recording is made at that frame rate, and the setting is remembered.
-- **Long recordings are kept as recorded.** A recording of five minutes or more (a meeting, a lecture) is not re-encoded: the original file is moved into your folder the moment you stop, whatever the quality setting says. While recording, **Restart** and **Delete** ask for a second click once the take is longer than a few seconds, and a discarded take goes to the Recycle Bin.
-- **Saved the moment you stop.** A clip that needs no crop or resize is saved as recorded, without re-encoding. Anything else gets a single hardware crop/scale pass that takes a second or two for a short clip, instead of a full render in the editor. Bitrates are tuned for screen content, so files are small enough to send.
-- **One hotkey from anywhere.** OpenScreen stays in the tray after you close the recorder. The hotkey starts a capture and stops the one in progress. It defaults to <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> where that is free; Windows 11 reserves it for the Snipping Tool, so on most PCs it becomes <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>. Change it under **⋯ → Record shortcut**.
-- **Light when idle.** A hidden recorder gives its window back after a minute; only the tray icon and the hotkey remain, and the recorder is rebuilt with your last setup when you need it. Optional **Launch at login** starts straight into the tray.
-- **Two ways out of the app, both kept.** Every clip is saved to your own folder (default `Videos\OpenScreen`, changeable). **Copy link** uploads that same file to Yandex Disk, verifies it, publishes a file-specific link and copies it. Sharing never deletes a clip from your folder.
-
-<p align="center">
-  <img src="docs/assets/quick-clip/hud-format.png" alt="Quality, frame rate, countdown and cursor options" width="560" />
-</p>
-
-### Studio recordings
-
-Turn on the camera or switch the cursor to **Editable** (window and screen captures) and the recording keeps its separate tracks for Studio instead of being saved instantly. Stop then opens the export step: **Save anywhere**, **Edit in Studio**, or **Publish & get link**, each rendering the final MP4 with your cursor and camera.
-
-### Transcripts
-
-Press **Transcribe** on the clip card and the conversation is written next to the video: `<clip>.txt` (paragraphs with timestamps) and `<clip>.srt` (subtitles most players pick up by themselves). It runs on your computer; nothing is uploaded.
-
-- **Whisper large-v3-turbo** on the graphics card where WebGPU is available, **Whisper small** on the processor elsewhere. The language is detected by itself. A 77-second meeting takes about 14 seconds on a mid-range GPU and about 30 on the processor.
-- The speech model is not in the installer. It downloads once, the first time you transcribe (about 560 MB for the GPU model, 250 MB for the processor one), and works offline after that.
-- Renaming or deleting a clip takes its transcript along. Studio's auto captions use the same engine.
-
-### Studio: frame it, cut it, export it
-
-Studio opens on a **Frame** tab that decides how the video is presented. Below it, the timeline shows the video as one clip you can cut; **Export** is one button at the top.
-
-<p align="center">
-  <img src="docs/assets/studio/frame-phone.png" alt="Studio with the Frame tab: a recording inside a phone mockup" width="820" />
-</p>
-
-- **Device mockups at real proportions.** Put the video inside a **phone** (9:19.5), a **tablet** (11-inch iPad), a **laptop** (16:10) or a **browser window**, in graphite, silver, black or white. A device never stretches to suit the video: **Scale** sizes it as a whole, a phone or tablet can be turned **Portrait** or **Landscape**, and the video either **fills** its screen (cropped to it) or **fits** inside it. A phone can carry a Dynamic Island, punch hole, notch or no camera. Only the browser window, which has no standard size, takes the shape of the video. The preview and the exported MP4/GIF draw the same device.
-- **Aspect ratio in one click.** Auto, 16:9, 4:3, 1:1 and 9:16 sit next to the **Scale** slider.
-- **Crop by the pixel.** Type how many source pixels to take off the **Top**, **Bottom**, **Left** and **Right** — `5` means exactly five — and see the resulting size. **Adjust on video** opens the visual crop editor, which shows the same numbers.
-- **Background** is the last section of the same tab: 167 built-in wallpapers, your own image, a colour or a gradient.
-- **Bring your own video.** **Open Video** in the title bar, the folder button on the Frame tab, dropping a file onto the empty editor, or **⋯ → Edit a video file…** in the recorder all open any MP4, MOV, WebM, MKV or AVI. Studio does not need a recording made by OpenScreen.
-
-<p align="center">
-  <img src="docs/assets/studio/timeline.png" alt="The timeline: the video as one clip, split into pieces, with the middle piece removed" width="820" />
-</p>
-
-- **One clip, cut where you like.** The first row of the timeline is the video itself, shown as a strip of its frames. Put the playhead where you want a cut and press **Split** (<kbd>T</kbd>); click a piece to select it and press **Remove** (<kbd>Delete</kbd>). The removed part stays on the track, hatched, so its edges can still be dragged and **Restore** puts it back. The toolbar shows how long the video is after the cuts. Zooms, camera, annotations and speed sit in their own rows underneath.
-- **Export from one place.** **Export** (top right) asks what to render — MP4 at 720p, 1080p or the source size, or a GIF — and then where it goes: **Save to computer…**, or **Publish & copy link** to Yandex Disk. If Yandex Disk is not connected yet, the same menu connects it without leaving Studio.
-
-<p align="center">
-  <img src="docs/assets/studio/export-menu.png" alt="The Export menu: format, quality, Save to computer and Publish" width="560" />
-</p>
-
-Creator Edition also includes:
-
-- **A capture-safe recorder** that stays on screen while recording but is excluded from the video, with a timer and stop, pause, restart and delete.
-- **Recording presets** (under **⋯**) that restore microphone, camera, system audio, cursor mode, countdown, quality, frame rate and a saved source in one click.
-- **Yandex Disk publishing** with an encrypted token, verified uploads, upload progress and a system notification when the link is ready.
-- **Safe local cleanup** as an option for Studio exports: local files are removed only after the upload is verified.
-- **OpenScreen desktop branding** across the installed application, shortcuts, icons, notifications and Windows processes.
-
-> [!IMPORTANT]
-> Creator-focused changes live in `creator-edition`, while `main` stays aligned with [getopenscreen/openscreen](https://github.com/getopenscreen/openscreen). Upstream updates are synced into `main` first and then merged into `creator-edition`, keeping this distribution upgradeable without mixing its features into the upstream mirror.
-
-> [!NOTE]
-> Quick clips use the native recorder on Windows and macOS. Area clips always record the system cursor into the video and cannot include the camera; use a window or screen capture for those. On Linux, closing the last window still quits the app, because tray support varies between desktops.
-
-<p align="center">
-	<img src="public/demo.png" alt="" style="height: 320px; margin-right: 12px;" />
-  <img src="public/sample.png" alt="" style="height: 320px; margin-right: 12px;" />
-</p>
-
-## Core Features
-- Record a selected area, a specific window, or your whole screen.
-- Record microphone and system audio.
-- Webcam overlay with picture-in-picture, drag-to-position, mirroring, and shape options.
-- Auto or manual zooms with adjustable depth, duration, easing, and pixel-precise position; auto-zoom follows your cursor as you work.
-- Custom cursor size, smoothing, and click effects, with cursor themes and post-recording path smoothing.
-- Automatic captions and transcripts (`.txt` + `.srt`), generated on-device with Whisper and no upload; the speech model downloads once on first use.
-- Wallpapers, solid colors, gradients, or your own background image.
-- Motion blur.
-- Crop (visually or by exact source pixels), trim, and per-segment speed control on the timeline.
-- Device mockups at real proportions — phone, tablet, laptop, browser window — and one-click aspect ratios.
-- A clip track you can split into pieces and cut parts out of.
-- Open any video file in the editor, not only OpenScreen recordings.
-- Text, arrow, and image annotations, with text animation presets.
-- Timeline snapping guides and an audio waveform to make trimming easier.
-- Customizable keyboard shortcuts.
-- Export to MP4 or GIF in multiple aspect ratios and resolutions.
-- Languages supported: Arabic, English, Spanish, French, Italian, Japanese, Korean, Portuguese (Brazil), Russian, Turkish, Vietnamese, Simplified Chinese, and Traditional Chinese.
-
-
-## Installation
-
-Download the latest installer for your platform from the [Releases page](https://github.com/Likemiens/openscreen/releases/latest). The installers are not code-signed, so the first launch shows a warning on Windows and macOS; the steps below get past it.
-
-### macOS
-
-Download `OpenScreen-Mac-arm64-<version>.dmg` (Apple Silicon: M1 and later) or `OpenScreen-Mac-x64-<version>.dmg` (Intel) from the [Releases page](https://github.com/Likemiens/openscreen/releases/latest). If Gatekeeper blocks the app, you can bypass it by running the following command in your terminal after installation:
-
-```bash
-xattr -rd com.apple.quarantine /Applications/OpenScreen.app
-```
-
-Note: Give your terminal Full Disk Access in **System Settings > Privacy & Security** to grant you access and then run the above command.
-
-After running this command, proceed to **System Settings > Privacy & Security** to grant the necessary permissions for "screen recording" and "accessibility". Once permissions are granted, you can launch the app.
-
-> [!NOTE]
-> **Upgrading from an older version and hitting permission issues?** If you already had OpenScreen installed and the new version won't record (Screen Recording or Accessibility keep failing even after you grant them), uninstall the old version, remove OpenScreen's existing entries under **System Settings > Privacy & Security** (both Screen Recording and Accessibility), then do a fresh install and grant the permissions again when prompted.
+Every option, with screenshots, is in the [user guide](docs/guide.md). Download only from this repository's [Releases](https://github.com/Likemiens/openscreen/releases): other websites using the OpenScreen name are not affiliated with it.
 
 ### Windows
 
-Download `OpenScreen-Custom-<version>-Setup.exe` from the [Releases page](https://github.com/Likemiens/openscreen/releases/latest) and run it. If SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
+Run `OpenScreen-Custom-<version>-Setup.exe`. If SmartScreen says "Windows protected your PC", click **More info → Run anyway**. The installer asks whether to add transcription (26 MB; the speech model downloads the first time you transcribe).
 
-The installer asks whether to install **transcription** (speech to text and subtitles). It takes 26 MB; the speech model is downloaded only the first time you transcribe. Clear the box to leave it out, or pass `/NOTRANSCRIPTION` for a silent install (`/S`); run the installer again to add it later.
+### macOS
+
+Use `OpenScreen-Mac-arm64-<version>.dmg` on Apple Silicon (M1 and later) or `OpenScreen-Mac-x64-<version>.dmg` on Intel. If Gatekeeper blocks the app, run `xattr -rd com.apple.quarantine /Applications/OpenScreen.app` in Terminal, then allow Screen Recording and Accessibility in **System Settings → Privacy & Security**. Details and the fix for upgrade permission problems: [install guide](docs/guide.md#macos).
 
 ### Linux
 
-Three packages are published to the [Releases page](https://github.com/Likemiens/openscreen/releases/latest) for each version. Pick the one that matches your distro:
+Use the `.AppImage` (any distro), `.deb` (Debian, Ubuntu) or `.pacman` (Arch). Commands, the sandbox fix and what differs between systems are in the [install guide](docs/guide.md#linux).
 
-**Debian / Ubuntu / Pop!_OS (`.deb`)**
-```bash
-sudo apt install ./OpenScreen-Linux-*.deb
-```
+## Materials
 
-**Arch / Manjaro (`.pacman`)**
-```bash
-sudo pacman -U OpenScreen-Linux-*.pacman
-```
+| What | Where |
+| --- | --- |
+| Website and brand assets | [marquee.likemiens.com](https://marquee.likemiens.com), [brand page](https://marquee.likemiens.com/brand) |
+| Downloads and release notes | [Releases](https://github.com/Likemiens/openscreen/releases), [docs/releases](docs/releases), [1-minute demo video](https://github.com/Likemiens/openscreen/releases/download/v1.9.0/OpenScreen-demo.mp4) |
+| User guide | [docs/guide.md](docs/guide.md) |
+| Product and decisions (in Russian) | [PRD](docs/prd.md), [decision log](docs/decisions.md), [fork roadmap](docs/customization-roadmap.md) |
+| Upstream | [siddharthvaddem/openscreen](https://github.com/siddharthvaddem/openscreen) (original, archived), [getopenscreen/openscreen](https://github.com/getopenscreen/openscreen) (continuation), [upstream roadmap](ROADMAP.md) |
+| Community | [OpenScreen Discord](https://discord.gg/VvT6Vtnyh), [upstream issues](https://github.com/getopenscreen/openscreen/issues) |
+| License | [MIT](LICENSE): by using this software, you agree that the authors are not liable for any issues, damages, or claims arising from its use. Wallpapers 19–167 in `public/wallpapers` come from the [Super Visuals — Backgrounds Library](https://www.figma.com/design/rd1wo2a08HDyumdphnNiqC/Super-Visuals--Backgrounds-Library) on Figma and remain under that library's own terms, not the MIT License. |
 
-**Any distro (`.AppImage`)**
-```bash
-chmod +x OpenScreen-Linux-*.AppImage
-./OpenScreen-Linux-*.AppImage
-```
+## For new contributors
 
-**NixOS / Nix:** the flake in this repository comes from upstream OpenScreen and is not maintained for Creator Edition yet; use the AppImage.
+- **Who is who:** [@Likemiens](https://github.com/Likemiens) owns and maintains this fork: product, code and releases. Upstream OpenScreen and its community live at [getopenscreen/openscreen](https://github.com/getopenscreen/openscreen) and on Discord.
+- **Where to start:** this README, then [AGENTS.md](AGENTS.md) for setup, checks and testing the recorder on real Windows and macOS, and [CONTRIBUTING.md](CONTRIBUTING.md). Forks and contributions are welcome: [fork it](https://github.com/Likemiens/openscreen/fork) and make it yours.
+- **Agreements:** `creator-edition` is the default branch; `main` mirrors upstream and is merged into `creator-edition` ([how](docs/upstream-sync.md)). No paid tiers or upsells. Cloud integrations stay apart from the recorder, and a local recording is never deleted before its upload is verified ([decision log](docs/decisions.md), D-001 to D-003).
 
-You may need to grant screen recording permissions depending on your desktop environment.
+## Open questions
 
-**Sandbox error:** If the AppImage fails to launch with a "sandbox" error, run it with `--no-sandbox`:
-```bash
-./OpenScreen-Linux-*.AppImage --no-sandbox
-```
+For [@Likemiens](https://github.com/Likemiens):
 
-### Platform differences
+- When 1.10.0 and the first release under the Marquee name ship, and in which order.
+- Whether the repository takes the Marquee name too; the installers do in [#3](https://github.com/Likemiens/openscreen/pull/3).
+- Whether to turn on Issues in this repository: they are off, while the website links to them.
+- Goals for downloads and stars.
 
-Everything in the editor and export is the same on macOS, Windows, and Linux: zooms, backgrounds, motion blur, crop/trim/speed, blur regions, annotations, auto-captions, projects, export, and all languages. The differences are in **capture**, where macOS and Windows use a native pipeline that Linux doesn't have:
+## For developers
 
-- **Native recording**: macOS (ScreenCaptureKit) and Windows (Windows Graphics Capture) record through a native pipeline for higher quality and clean window-level capture. Linux records through the browser pipeline instead.
-- **Custom cursors**: on macOS and Windows the real cursor is captured (shape, type, and clicks), which powers the cursor themes, click effects, and editable cursor overlay. On Linux only the cursor position is captured (used for auto-zoom), so those cursor options aren't available.
-- **Webcam**: captured natively on macOS and Windows; on Linux it's recorded through the browser, but still works as a picture-in-picture overlay.
-- **System audio** support varies by OS:
-  - **macOS**: requires macOS 13+. On macOS 14.2+ you'll be prompted to grant audio capture permission. macOS 12 and below can't capture system audio (mic still works).
-  - **Windows**: works out of the box.
-  - **Linux**: needs PipeWire (default on Ubuntu 22.04+, Fedora 34+). Older PulseAudio-only setups may not capture system audio (mic should still work).
-
-## Building Creator Edition
+Electron, React, TypeScript and Pixi.js, built with Vite; native capture helpers in Swift (macOS, ScreenCaptureKit) and C++ (Windows Graphics Capture). Node 22.22.1 and npm 10.9.4.
 
 ```bash
 npm install
@@ -235,32 +106,6 @@ npm run build:win    # Windows installer in release/<version>/
 npx tsc && npx vite build && npx electron-builder --win --config.npmRebuild=false
 ```
 
-`npx playwright test tests/e2e/quick-clip.spec.ts` drives the real app on Windows: it selects an area, records a few seconds of the screen, and checks the saved clip. Run `npm run build-vite` first.
+`npx playwright test tests/e2e/quick-clip.spec.ts` drives the real app on Windows: it selects an area, records a few seconds of the screen, and checks the saved clip. Run `npm run build-vite` first. Lint, typecheck, browser and end-to-end tests, and notes for AI agents are in [AGENTS.md](AGENTS.md).
 
-## Official links
-
-This repository is the community-maintained continuation of OpenScreen.
-
-Official / trusted links:
-
-* OpenScreen Creator Edition (this repository): https://github.com/Likemiens/openscreen
-* Original archived repository: https://github.com/siddharthvaddem/openscreen
-* Community continuation: https://github.com/EtienneLescot/openscreen
-
-For safety, download OpenScreen only from the official GitHub Releases linked from this repository. Third-party websites using the OpenScreen name are not affiliated with this continuation unless explicitly listed here.
-
-## Community
-
-OpenScreen is community-driven. If you need help, want to report a bug, or just want to chat with other users and contributors:
-
-- 💬 **Discord** — [Join the OpenScreen Discord](https://discord.gg/VvT6Vtnyh) for real-time help, showcase, and discussion
-- 🐞 **[GitHub Issues](https://github.com/EtienneLescot/openscreen/issues)** — bug reports and feature requests
-- 🗺️ **[Roadmap](./ROADMAP.md)** — see what we're building next
-
----
-
-## License
-
-This project is licensed under the [MIT License](./LICENSE). By using this software, you agree that the authors are not liable for any issues, damages, or claims arising from its use.
-
-Wallpapers 19–167 in `public/wallpapers` come from the [Super Visuals — Backgrounds Library](https://www.figma.com/design/rd1wo2a08HDyumdphnNiqC/Super-Visuals--Backgrounds-Library) on Figma and remain under that library's own terms, not the MIT License.
+Secrets: the Yandex Disk token is entered in the app and stored encrypted with Electron `safeStorage`, never in the repository; release and CI secrets are listed in [docs/secrets.md](docs/secrets.md). The website is a static site in `site/`, deployed on Vercel.
